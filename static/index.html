@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Truck Tetris</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+    pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; border-radius: 6px; }
+    button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Truck Tetris</h1>
+  <p>M1 skeleton. 3D viewer arrives in M3.</p>
+  <button id="load">Load sample &amp; solve</button>
+  <h2>Sample data</h2>
+  <pre id="sample">—</pre>
+  <h2>Solve result</h2>
+  <pre id="plan">—</pre>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    $('load').addEventListener('click', async () => {
+      const sample = await (await fetch('/api/sample')).json();
+      $('sample').textContent = JSON.stringify(sample, null, 2);
+
+      const plan = await (await fetch('/api/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sample),
+      })).json();
+      $('plan').textContent = JSON.stringify(plan, null, 2);
+    });
+  </script>
+</body>
+</html>
