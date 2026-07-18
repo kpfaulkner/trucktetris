@@ -66,13 +66,14 @@ CREATE TABLE IF NOT EXISTS cases (
 	can_lie_on_side  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS trucks (
-	id        TEXT PRIMARY KEY,
-	name      TEXT NOT NULL,
-	l         INTEGER NOT NULL,
-	w         INTEGER NOT NULL,
-	h         INTEGER NOT NULL,
-	gross_max INTEGER NOT NULL,
-	axles     TEXT NOT NULL DEFAULT '[]'
+	id              TEXT PRIMARY KEY,
+	name            TEXT NOT NULL,
+	l               INTEGER NOT NULL,
+	w               INTEGER NOT NULL,
+	h               INTEGER NOT NULL,
+	gross_max       INTEGER NOT NULL,
+	heavy_threshold INTEGER NOT NULL DEFAULT 0,
+	axles           TEXT NOT NULL DEFAULT '[]'
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -86,6 +87,10 @@ CREATE TABLE IF NOT EXISTS trucks (
 		if err := s.addColumnIfMissing("cases", m.col, m.def); err != nil {
 			return err
 		}
+	}
+	if err := s.addColumnIfMissing("trucks", "heavy_threshold",
+		"INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -203,7 +208,7 @@ func (s *Store) DeleteCase(id string) error {
 
 // ListTrucks returns all trucks ordered by name.
 func (s *Store) ListTrucks() ([]domain.Truck, error) {
-	rows, err := s.db.Query(`SELECT id, name, l, w, h, gross_max, axles
+	rows, err := s.db.Query(`SELECT id, name, l, w, h, gross_max, heavy_threshold, axles
 		FROM trucks ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -223,7 +228,7 @@ func (s *Store) ListTrucks() ([]domain.Truck, error) {
 
 // GetTruck returns one truck by id, or ErrNotFound.
 func (s *Store) GetTruck(id string) (domain.Truck, error) {
-	row := s.db.QueryRow(`SELECT id, name, l, w, h, gross_max, axles
+	row := s.db.QueryRow(`SELECT id, name, l, w, h, gross_max, heavy_threshold, axles
 		FROM trucks WHERE id = ?`, id)
 	t, err := scanTruck(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -242,12 +247,13 @@ func (s *Store) SaveTruck(t domain.Truck) error {
 	}
 	axles, _ := json.Marshal(t.Axles)
 	_, err := s.db.Exec(`
-		INSERT INTO trucks (id, name, l, w, h, gross_max, axles)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO trucks (id, name, l, w, h, gross_max, heavy_threshold, axles)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, l=excluded.l, w=excluded.w, h=excluded.h,
-			gross_max=excluded.gross_max, axles=excluded.axles`,
-		t.ID, t.Name, t.Dim.L, t.Dim.W, t.Dim.H, t.GrossMax, string(axles))
+			gross_max=excluded.gross_max, heavy_threshold=excluded.heavy_threshold,
+			axles=excluded.axles`,
+		t.ID, t.Name, t.Dim.L, t.Dim.W, t.Dim.H, t.GrossMax, t.HeavyThreshold, string(axles))
 	return err
 }
 
@@ -295,7 +301,8 @@ func scanCase(sc scanner) (domain.Case, error) {
 func scanTruck(sc scanner) (domain.Truck, error) {
 	var t domain.Truck
 	var axles string
-	if err := sc.Scan(&t.ID, &t.Name, &t.Dim.L, &t.Dim.W, &t.Dim.H, &t.GrossMax, &axles); err != nil {
+	if err := sc.Scan(&t.ID, &t.Name, &t.Dim.L, &t.Dim.W, &t.Dim.H, &t.GrossMax,
+		&t.HeavyThreshold, &axles); err != nil {
 		return domain.Truck{}, err
 	}
 	if err := json.Unmarshal([]byte(axles), &t.Axles); err != nil {

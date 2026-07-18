@@ -11,7 +11,8 @@ func SampleTruck() Truck {
 			{Position: 1200, MaxLoad: 6000},  // steer/front
 			{Position: 6000, MaxLoad: 10000}, // drive/rear
 		},
-		GrossMax: 12000,
+		GrossMax:       12000,
+		HeavyThreshold: 80, // only cases >= 80kg need to sit over the axles
 	}
 }
 

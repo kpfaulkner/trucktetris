@@ -183,6 +183,31 @@ func TestStackerRejectsAxleOverload(t *testing.T) {
 	}
 }
 
+func TestFindSpotBiasesOnlyHeavyCases(t *testing.T) {
+	// Two floor candidates: x=0 (front, away from axle) and x=1500 (near the
+	// rear axle at 2000). Heavy cases should prefer the axle; light cases should
+	// pack front-most for density.
+	tk := domain.Truck{
+		Dim: domain.Dimensions{L: 2000, W: 500, H: 500}, GrossMax: 1_000_000,
+		Axles:          []domain.Axle{{Position: 2000, MaxLoad: 1_000_000}},
+		HeavyThreshold: 100,
+	}
+	pts := []point{{0, 0, 0}, {1500, 0, 0}}
+	cube := domain.Dimensions{L: 500, W: 500, H: 500}
+
+	light := domain.Case{ID: "l", Dim: cube, Weight: 10}
+	pos, _, _, ok := findSpot(light, tk, nil, map[int]int{}, pts, nil)
+	if !ok || pos.x != 0 {
+		t.Fatalf("light case should pack front-most (x=0), got x=%d ok=%v", pos.x, ok)
+	}
+
+	heavy := domain.Case{ID: "h", Dim: cube, Weight: 150}
+	pos, _, _, ok = findSpot(heavy, tk, nil, map[int]int{}, pts, nil)
+	if !ok || pos.x != 1500 {
+		t.Fatalf("heavy case should bias to axle (x=1500), got x=%d ok=%v", pos.x, ok)
+	}
+}
+
 func TestStackerRejectsWhenBottomNotStackable(t *testing.T) {
 	// Type + weight would allow it, but the bottom case is flagged not
 	// stackable, so nothing may rest on it.

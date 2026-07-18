@@ -106,7 +106,7 @@
       <section>
         <h2>Trucks / trailers</h2>
         <table>
-          <thead><tr><th>Name</th><th>L×W×H (mm)</th><th>Gross max</th><th>Axles (pos/load)</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>L×W×H (mm)</th><th>Gross max</th><th>Heavy ≥</th><th>Axles (pos/load)</th><th></th></tr></thead>
           <tbody id="truck-rows"></tbody>
         </table>
         <form id="truck-form" class="entry">
@@ -115,6 +115,7 @@
           <label>W<input id="t-w" type="number" min="1" required></label>
           <label>H<input id="t-h" type="number" min="1" required></label>
           <label>Gross max<input id="t-gross" type="number" min="1" required></label>
+          <label>Heavy ≥ (kg, 0=off)<input id="t-heavy" type="number" min="0" value="0"></label>
           <label class="wide">Axles (pos:load, comma)<input id="t-axles" type="text" class="wide" placeholder="1200:6000, 6000:10000"></label>
           <button type="submit">Add truck</button>
         </form>

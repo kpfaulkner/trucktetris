@@ -12,7 +12,6 @@ Will need to take into account a number of factors:
 - What types of road cases can be stacked on top of each other
 - Which road cases can be laid on their side vs must stay in regular (upright) orientation
 - Do some road cases (maybe due to weight) need to be over the axles?
-- Do some items have to be unloaded before others? (maybe unloading at multiple sites?)
 
 After taking the above into consideration, want to develop a website (Go backend) that allows
 users to select various road cases and a truck size and maximise the cases that can go
@@ -155,24 +154,12 @@ Reporting:
 
 **Done when:** solver output keeps every axle within limit and reports the distribution. ✅
 
-**Refinement (not yet modelled):** the axle bias should key off an **absolute weight threshold**,
-not relative heaviness. Only cases above a set weight (e.g. a `heavyThreshold` kg, per truck or
-global config) need to sit over the axles — we do *not* need to force the heaviest cases in a
-given load over the axles when the whole load is light. Below the threshold, ignore the axle bias
-and pack for density. Current behaviour biases by relative order (heaviest-first + nearest-axle
-tie-break), which over-constrains light loads.
+**Refinement — absolute weight threshold ✅ implemented:** the axle bias keys off an absolute
+weight, not relative heaviness. `Truck.HeavyThreshold` (kg); a case is biased over the axles only
+when its weight ≥ the threshold (and the threshold > 0). Lighter cases ignore the bias and pack
+for density. Per-axle max load is still enforced for every case. Threshold 0 disables the bias.
 
-### M7 — Unload order
-**Goal:** Multi-site loading order.
-
-- Each case gets a drop sequence / destination.
-- Constraint: earlier-drop cases must be reachable (loaded last / nearest the door / on top).
-- Solver orders placement so unload sequence is physically possible without moving other cases.
-
-**Done when:** for a multi-stop route, each stop's cases can be removed without disturbing
-later-stop cases.
-
-### M8 — Manual repositioning
+### M7 — Manual repositioning
 **Goal:** Human override in 3D.
 
 - Raycaster picks a box; drag to reposition (raycast onto floor/axis plane).
@@ -183,7 +170,7 @@ later-stop cases.
 **Done when:** user drags a case to a new valid spot, sees updated axle/weight readouts, and
 overlaps/violations are flagged.
 
-### M9 — Polish
+### M8 — Polish
 **Goal:** Usable product.
 
 - Save / load named load plans.
@@ -195,9 +182,10 @@ overlaps/violations are flagged.
 
 ### Notes
 - M1–M3 = walking skeleton on hardcoded data; value early, proves the full stack.
-- Keep the solver behind the `Packer` interface — every solver milestone (M2, M5, M6, M7) is a
+- Keep the solver behind the `Packer` interface — every solver milestone (M2, M5, M6) is a
   swap or extension, not a rewrite.
-- M8 depends on the M5/M6 recompute logic already existing.
-- Weight/axle/order info is UI overlay + solver logic, not extra 3D geometry — keep the 3D to
+- M7 depends on the M5/M6 recompute logic already existing.
+- Weight/axle info is UI overlay + solver logic, not extra 3D geometry — keep the 3D to
   plain boxes.
+- Single unload site only — unload order / multi-drop sequencing is out of scope by design.
 

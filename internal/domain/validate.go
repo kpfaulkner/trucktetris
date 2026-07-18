@@ -39,6 +39,9 @@ func (t Truck) Validate() error {
 	if t.GrossMax <= 0 {
 		errs = append(errs, fmt.Errorf("gross max weight must be positive, got %d", t.GrossMax))
 	}
+	if t.HeavyThreshold < 0 {
+		errs = append(errs, fmt.Errorf("heavy threshold cannot be negative, got %d", t.HeavyThreshold))
+	}
 	for i, a := range t.Axles {
 		if a.Position < 0 || a.Position > t.Dim.L {
 			errs = append(errs, fmt.Errorf("axle %d position %d outside truck length %d",

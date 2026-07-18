@@ -114,6 +114,7 @@ function renderTruckTable() {
       el('td', { textContent: t.name }),
       el('td', { textContent: `${t.dim.l}×${t.dim.w}×${t.dim.h}` }),
       el('td', { textContent: t.grossMax }),
+      el('td', { textContent: t.heavyThreshold || '—' }),
       el('td', { textContent: axles }),
     ]);
     const del = el('button', { textContent: 'Delete', className: 'small' });
@@ -142,6 +143,7 @@ async function submitTruck(e) {
       name: $('#t-name').value.trim(),
       dim: { l: +$('#t-l').value, w: +$('#t-w').value, h: +$('#t-h').value },
       grossMax: +$('#t-gross').value,
+      heavyThreshold: +$('#t-heavy').value,
       axles: parseAxles($('#t-axles').value),
     });
     $('#truck-form').reset();

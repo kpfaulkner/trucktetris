@@ -115,14 +115,20 @@ func caseLoad(minX, dx, weight int) domain.PointLoad {
 // over the axles. A candidate is rejected if adding c there would overload any
 // axle.
 func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, points []point, loads []domain.PointLoad) (point, orientation, int, bool) {
+	// Only heavy cases are biased over the axles; lighter cases pack for
+	// density (lowest, then front-most).
+	biasToAxle := t.IsHeavy(c.Weight)
+
 	cand := make([]point, len(points))
 	copy(cand, points)
 	sort.SliceStable(cand, func(i, j int) bool {
 		if cand[i].z != cand[j].z {
 			return cand[i].z < cand[j].z
 		}
-		if di, dj := axleDist(t, cand[i].x), axleDist(t, cand[j].x); di != dj {
-			return di < dj
+		if biasToAxle {
+			if di, dj := axleDist(t, cand[i].x), axleDist(t, cand[j].x); di != dj {
+				return di < dj
+			}
 		}
 		if cand[i].x != cand[j].x {
 			return cand[i].x < cand[j].x

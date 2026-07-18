@@ -66,6 +66,16 @@ type Truck struct {
 	Axles []Axle `json:"axles"`
 	// GrossMax is the maximum total cargo weight, kg.
 	GrossMax int `json:"grossMax"`
+	// HeavyThreshold is the weight, kg, at or above which a case should be
+	// biased to sit over the axles. Lighter cases ignore the axle bias and pack
+	// for density. Zero disables the bias entirely. Per-axle max load is always
+	// enforced regardless of this value.
+	HeavyThreshold int `json:"heavyThreshold"`
+}
+
+// IsHeavy reports whether case weight w should be biased over the axles.
+func (t Truck) IsHeavy(w int) bool {
+	return t.HeavyThreshold > 0 && w >= t.HeavyThreshold
 }
 
 // Placement positions one case inside the truck.

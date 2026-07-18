@@ -57,6 +57,20 @@ func TestComputeAxleLoadsFlagsOver(t *testing.T) {
 	}
 }
 
+func TestIsHeavy(t *testing.T) {
+	tk := Truck{HeavyThreshold: 80}
+	if tk.IsHeavy(79) {
+		t.Error("79 < 80 should not be heavy")
+	}
+	if !tk.IsHeavy(80) {
+		t.Error("80 >= 80 should be heavy")
+	}
+	off := Truck{HeavyThreshold: 0}
+	if off.IsHeavy(10000) {
+		t.Error("threshold 0 disables the bias; nothing is heavy")
+	}
+}
+
 func TestComputeAxleLoadsSingleAxle(t *testing.T) {
 	tk := Truck{Dim: Dimensions{L: 3000, W: 2000, H: 2000}, GrossMax: 5000,
 		Axles: []Axle{{Position: 1500, MaxLoad: 5000}}}
