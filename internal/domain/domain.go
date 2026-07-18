@@ -118,10 +118,25 @@ type Summary struct {
 	PlacedCount   int `json:"placedCount"`
 	UnplacedCount int `json:"unplacedCount"`
 	TotalWeight   int `json:"totalWeight"` // kg, placed cases only
+	// VolumeUtilPct is placed-case volume as a percentage of the truck's load
+	// space volume. WeightUtilPct is total weight as a percentage of GrossMax.
+	VolumeUtilPct int `json:"volumeUtilPct"`
+	WeightUtilPct int `json:"weightUtilPct"`
 }
 
 // SolveRequest is the input to the solver API.
 type SolveRequest struct {
 	Truck Truck  `json:"truck"`
 	Cases []Case `json:"cases"`
+}
+
+// SavedPlan is a named, persisted load plan capturing the truck selection and
+// the (possibly manually edited) placements.
+type SavedPlan struct {
+	ID         string      `json:"id"`
+	Name       string      `json:"name"`
+	TruckID    string      `json:"truckId"`
+	Placements []Placement `json:"placements"`
+	Unplaced   []string    `json:"unplaced"`
+	CreatedAt  string      `json:"createdAt"`
 }

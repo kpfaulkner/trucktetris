@@ -99,8 +99,28 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 
 	plan.Summary.PlacedCount = len(plan.Placements)
 	plan.Summary.UnplacedCount = len(plan.Unplaced)
+	plan.Summary.VolumeUtilPct = volumeUtilPct(t, plan.Placements)
+	plan.Summary.WeightUtilPct = pct(plan.Summary.TotalWeight, t.GrossMax)
 	plan.AxleLoads = domain.ComputeAxleLoads(t, loads)
 	return plan
+}
+
+// volumeUtilPct is placed volume as a percentage of the truck's load space.
+func volumeUtilPct(t domain.Truck, placements []domain.Placement) int {
+	truckVol := t.Dim.L * t.Dim.W * t.Dim.H
+	used := 0
+	for _, p := range placements {
+		used += p.Size[0] * p.Size[1] * p.Size[2]
+	}
+	return pct(used, truckVol)
+}
+
+// pct returns 100*num/den as a rounded integer, or 0 when den <= 0.
+func pct(num, den int) int {
+	if den <= 0 {
+		return 0
+	}
+	return int(float64(num)/float64(den)*100 + 0.5)
 }
 
 // caseLoad builds the point load for a placed case: its weight acting at the

@@ -155,6 +155,55 @@ func TestTruckRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPlanRoundTripAndList(t *testing.T) {
+	s := openTest(t)
+	p := domain.SavedPlan{
+		ID: "p1", Name: "Friday show", TruckID: "truck-sample",
+		Placements: []domain.Placement{
+			{CaseID: "c1", Pos: [3]int{0, 0, 0}, Size: [3]int{100, 100, 100}, Up: domain.AxisH},
+		},
+		Unplaced: []string{"c9"},
+	}
+	if err := s.SavePlan(p); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := s.GetPlan("p1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Name != "Friday show" || got.TruckID != "truck-sample" ||
+		len(got.Placements) != 1 || got.Placements[0].CaseID != "c1" ||
+		len(got.Unplaced) != 1 || got.CreatedAt == "" {
+		t.Fatalf("round trip mismatch: %+v", got)
+	}
+
+	list, err := s.ListPlans()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != "p1" {
+		t.Fatalf("list = %+v, want one plan p1", list)
+	}
+}
+
+func TestSavePlanRejectsMissingFields(t *testing.T) {
+	s := openTest(t)
+	if err := s.SavePlan(domain.SavedPlan{ID: "p1", TruckID: "t"}); err == nil {
+		t.Fatal("expected error for missing name")
+	}
+}
+
+func TestDeletePlan(t *testing.T) {
+	s := openTest(t)
+	s.SavePlan(domain.SavedPlan{ID: "p1", Name: "x", TruckID: "t"})
+	if err := s.DeletePlan("p1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := s.DeletePlan("p1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete = %v, want ErrNotFound", err)
+	}
+}
+
 func TestSaveTruckRejectsAxleOutsideLength(t *testing.T) {
 	s := openTest(t)
 	err := s.SaveTruck(domain.Truck{ID: "t1", Name: "x",

@@ -141,6 +141,24 @@ func TestStackerRejectsDisallowedStack(t *testing.T) {
 	}
 }
 
+func TestStackerReportsUtilisation(t *testing.T) {
+	// One 1000x1000x1000 case in a 2000x1000x1000 truck = half the volume.
+	// Weight 500 of gross 1000 = half the weight.
+	req := domain.SolveRequest{
+		Truck: domain.Truck{ID: "t", Dim: domain.Dimensions{L: 2000, W: 1000, H: 1000}, GrossMax: 1000},
+		Cases: []domain.Case{
+			{ID: "a", Type: "x", Dim: domain.Dimensions{L: 1000, W: 1000, H: 1000}, Weight: 500},
+		},
+	}
+	plan := Stacker{}.Pack(req)
+	if plan.Summary.VolumeUtilPct != 50 {
+		t.Fatalf("volume util = %d%%, want 50%%", plan.Summary.VolumeUtilPct)
+	}
+	if plan.Summary.WeightUtilPct != 50 {
+		t.Fatalf("weight util = %d%%, want 50%%", plan.Summary.WeightUtilPct)
+	}
+}
+
 func TestStackerReportsAxleLoads(t *testing.T) {
 	req := domain.SolveRequest{Truck: domain.SampleTruck(), Cases: domain.SampleCases()}
 	plan := Stacker{}.Pack(req)

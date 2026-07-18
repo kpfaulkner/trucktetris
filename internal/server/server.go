@@ -44,6 +44,11 @@ func New(staticFS fs.FS, st *store.Store) http.Handler {
 	mux.HandleFunc("POST /api/solve", a.solve)
 	mux.HandleFunc("POST /api/evaluate", a.evaluate)
 
+	mux.HandleFunc("GET /api/plans", a.listPlans)
+	mux.HandleFunc("POST /api/plans", a.createPlan)
+	mux.HandleFunc("GET /api/plans/{id}", a.getPlan)
+	mux.HandleFunc("DELETE /api/plans/{id}", a.deletePlan)
+
 	mux.Handle("GET /", http.FileServerFS(staticFS))
 
 	return logRequests(mux)
@@ -227,6 +232,49 @@ func (a *api) evaluate(w http.ResponseWriter, r *http.Request) {
 		cases[p.CaseID] = c
 	}
 	writeJSON(w, http.StatusOK, domain.EvaluatePlan(truck, req.Placements, cases))
+}
+
+// --- saved plans -------------------------------------------------------------
+
+func (a *api) listPlans(w http.ResponseWriter, _ *http.Request) {
+	plans, err := a.store.ListPlans()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, plans)
+}
+
+func (a *api) getPlan(w http.ResponseWriter, r *http.Request) {
+	p, err := a.store.GetPlan(r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (a *api) createPlan(w http.ResponseWriter, r *http.Request) {
+	var p domain.SavedPlan
+	if !decode(w, r, &p) {
+		return
+	}
+	if p.ID == "" {
+		p.ID = newID("plan")
+	}
+	if err := a.store.SavePlan(p); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (a *api) deletePlan(w http.ResponseWriter, r *http.Request) {
+	if err := a.store.DeletePlan(r.PathValue("id")); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- helpers -----------------------------------------------------------------

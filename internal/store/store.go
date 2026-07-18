@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 
@@ -74,6 +75,14 @@ CREATE TABLE IF NOT EXISTS trucks (
 	gross_max       INTEGER NOT NULL,
 	heavy_threshold INTEGER NOT NULL DEFAULT 0,
 	axles           TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS saved_plans (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	truck_id   TEXT NOT NULL,
+	placements TEXT NOT NULL DEFAULT '[]',
+	unplaced   TEXT NOT NULL DEFAULT '[]',
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -260,6 +269,72 @@ func (s *Store) SaveTruck(t domain.Truck) error {
 // DeleteTruck removes a truck by id. Missing ids return ErrNotFound.
 func (s *Store) DeleteTruck(id string) error {
 	return s.deleteByID("trucks", id)
+}
+
+// --- saved plans -------------------------------------------------------------
+
+// ListPlans returns saved plans (without placements) newest first.
+func (s *Store) ListPlans() ([]domain.SavedPlan, error) {
+	rows, err := s.db.Query(`SELECT id, name, truck_id, created_at
+		FROM saved_plans ORDER BY created_at DESC, name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.SavedPlan
+	for rows.Next() {
+		var p domain.SavedPlan
+		if err := rows.Scan(&p.ID, &p.Name, &p.TruckID, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetPlan returns one saved plan with its placements, or ErrNotFound.
+func (s *Store) GetPlan(id string) (domain.SavedPlan, error) {
+	row := s.db.QueryRow(`SELECT id, name, truck_id, placements, unplaced, created_at
+		FROM saved_plans WHERE id = ?`, id)
+	var p domain.SavedPlan
+	var placements, unplaced string
+	err := row.Scan(&p.ID, &p.Name, &p.TruckID, &placements, &unplaced, &p.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.SavedPlan{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.SavedPlan{}, err
+	}
+	if err := json.Unmarshal([]byte(placements), &p.Placements); err != nil {
+		return domain.SavedPlan{}, fmt.Errorf("decode placements for %s: %w", id, err)
+	}
+	if err := json.Unmarshal([]byte(unplaced), &p.Unplaced); err != nil {
+		return domain.SavedPlan{}, fmt.Errorf("decode unplaced for %s: %w", id, err)
+	}
+	return p, nil
+}
+
+// SavePlan upserts a saved plan. It must have an ID, name, and truck ID.
+func (s *Store) SavePlan(p domain.SavedPlan) error {
+	if p.ID == "" || strings.TrimSpace(p.Name) == "" || p.TruckID == "" {
+		return errors.New("plan ID, name, and truck ID are required")
+	}
+	placements, _ := json.Marshal(p.Placements)
+	unplaced, _ := json.Marshal(p.Unplaced)
+	_, err := s.db.Exec(`
+		INSERT INTO saved_plans (id, name, truck_id, placements, unplaced)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name=excluded.name, truck_id=excluded.truck_id,
+			placements=excluded.placements, unplaced=excluded.unplaced`,
+		p.ID, p.Name, p.TruckID, string(placements), string(unplaced))
+	return err
+}
+
+// DeletePlan removes a saved plan by id. Missing ids return ErrNotFound.
+func (s *Store) DeletePlan(id string) error {
+	return s.deleteByID("saved_plans", id)
 }
 
 // --- helpers -----------------------------------------------------------------

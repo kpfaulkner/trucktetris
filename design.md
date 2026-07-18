@@ -196,15 +196,37 @@ evaluation, same as any other violation.)
 - Manual placements persist **in-session** (client state; survive tab switches, cleared on
   re-solve). Saving an edited plan to the database is deferred to M8.
 
-### M8 — Polish
+### M8 — Polish  ✅ implemented
 **Goal:** Usable product.
 
-- Save / load named load plans.
-- Case + truck library management UI (built on M4).
-- Export loading plan (printable order + positions, PDF or CSV).
-- Basic packing metrics: volume utilisation %, weight utilisation %.
+Packing metrics (`domain.Summary`):
 
-**Done when:** a plan can be saved, reloaded, and exported for use by loaders.
+- `volumeUtilPct` — placed-case volume as a percentage of the truck load-space volume.
+- `weightUtilPct` — total placed weight as a percentage of `grossMax`.
+- Computed by `Stacker` at solve time; shown in the plan panel and recomputed client-side during
+  manual edits (volume from placements, weight from the live evaluation).
+
+Save / load named plans:
+
+- `domain.SavedPlan{id, name, truckId, placements, unplaced, createdAt}`; `saved_plans` table
+  (placements/unplaced stored as JSON, `created_at` defaulted by SQLite).
+- Store CRUD: `ListPlans` (metadata only, newest first), `GetPlan`, `SavePlan` (upsert),
+  `DeletePlan`. Endpoints `GET/POST /api/plans`, `GET/DELETE /api/plans/{id}`.
+- A save captures the **current** placements, including manual edits from M7. Loading fetches the
+  plan + its truck, rebuilds the 3D view (editable), and re-derives live stats via
+  `/api/evaluate`.
+- Plan panel: name field + Save, and a list of saved plans with Load / Delete.
+
+Export:
+
+- Client-side **CSV** download of the current plan: order, case id, name, weight, position
+  (x/y/z mm), size (dx/dy/dz mm), up-axis. Proper CSV quoting. (CSV, not PDF — no external
+  library; opens in any spreadsheet and prints from there.)
+
+Case + truck library management: already delivered in M4 (Manage tab); M7 added inline case
+editing.
+
+**Done when:** a plan can be saved, reloaded, and exported for use by loaders. ✅
 
 ### Notes
 - M1–M3 = walking skeleton on hardcoded data; value early, proves the full stack.

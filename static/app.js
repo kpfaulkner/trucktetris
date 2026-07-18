@@ -37,7 +37,9 @@ let viewer = null;
 // Current plan context, so manual edits can be re-evaluated and survive tab
 // switches within the session.
 let planTruckId = null;
+let planTruck = null;      // full truck object for the current plan
 let planCaseById = new Map();
+let planUnplaced = [];
 
 async function refreshData() {
   [cases, trucks] = await Promise.all([api('GET', '/api/cases'), api('GET', '/api/trucks')]);
@@ -228,6 +230,8 @@ async function solve() {
   try {
     const plan = await api('POST', '/api/solve', { truckId, caseIds });
     planTruckId = truckId;
+    planTruck = plan.truck;
+    planUnplaced = plan.unplaced || [];
     planCaseById = new Map(cases.map((c) => [c.id, c]));
     // Re-solving discards any manual edits and overrides with the solver result.
     viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
@@ -277,6 +281,8 @@ function renderPlanStats(plan, caseById) {
   $('#stat-placed').textContent = plan.summary.placedCount;
   $('#stat-unplaced').textContent = plan.summary.unplacedCount;
   $('#stat-weight').textContent = `${plan.summary.totalWeight} kg`;
+  $('#stat-vol').textContent = `${plan.summary.volumeUtilPct}%`;
+  $('#stat-wutil').textContent = `${plan.summary.weightUtilPct}%`;
   axleRows(plan.axleLoads);
   $('#stat-violations').textContent = '';
   $('#stat-unfit').textContent = plan.unplaced.length
@@ -289,6 +295,14 @@ function updateLiveStats(ev) {
   const gross = ev.overGross ? ' ⚠ over gross' : '';
   $('#stat-weight').textContent = `${ev.totalWeight} kg${gross}`;
   axleRows(ev.axleLoads);
+
+  if (planTruck) {
+    const tv = planTruck.dim.l * planTruck.dim.w * planTruck.dim.h;
+    const used = viewer.placements().reduce((s, p) => s + p.size[0] * p.size[1] * p.size[2], 0);
+    $('#stat-vol').textContent = tv > 0 ? `${Math.round((used / tv) * 100)}%` : '—';
+    $('#stat-wutil').textContent = planTruck.grossMax > 0
+      ? `${Math.round((ev.totalWeight / planTruck.grossMax) * 100)}%` : '—';
+  }
 
   const problems = [];
   if (ev.overGross) problems.push('over gross weight');
@@ -303,6 +317,97 @@ function updateLiveStats(ev) {
   v.style.color = problems.length ? '#b00' : '#2a7';
 }
 
+// --- save / load / export ----------------------------------------------------
+
+async function savePlan() {
+  setError('');
+  const name = $('#plan-name').value.trim();
+  if (!name) { setError('Enter a plan name'); return; }
+  if (!planTruckId) { setError('Solve a plan first'); return; }
+  try {
+    await api('POST', '/api/plans', {
+      name, truckId: planTruckId,
+      placements: viewer.placements(),
+      unplaced: planUnplaced,
+    });
+    $('#plan-name').value = '';
+    await renderPlanList();
+  } catch (err) { setError(err.message); }
+}
+
+async function loadPlan(id) {
+  setError('');
+  try {
+    const saved = await api('GET', `/api/plans/${id}`);
+    const truck = await api('GET', `/api/trucks/${saved.truckId}`);
+    planTruckId = truck.id;
+    planTruck = truck;
+    planUnplaced = saved.unplaced || [];
+    planCaseById = new Map(cases.map((c) => [c.id, c]));
+
+    const plan = { truck, placements: saved.placements || [], unplaced: planUnplaced };
+    viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
+    $('#stat-truck').textContent = truck.name;
+    $('#stat-placed').textContent = plan.placements.length;
+    $('#stat-unplaced').textContent = planUnplaced.length;
+    // Re-derive live stats (weight, axle loads, violations) from the placements.
+    onPlacementsChanged(plan.placements);
+  } catch (err) { setError(err.message); }
+}
+
+async function deletePlan(id) {
+  try { await api('DELETE', `/api/plans/${id}`); await renderPlanList(); }
+  catch (err) { setError(err.message); }
+}
+
+async function renderPlanList() {
+  const list = $('#plan-list');
+  try {
+    const plans = await api('GET', '/api/plans');
+    list.replaceChildren();
+    if (!plans || !plans.length) {
+      list.append(el('div', { className: 'pdate', textContent: 'No saved plans yet.' }));
+      return;
+    }
+    for (const p of plans) {
+      const load = el('button', { textContent: 'Load', className: 'small edit' });
+      load.addEventListener('click', () => loadPlan(p.id));
+      const del = el('button', { textContent: 'Delete', className: 'small' });
+      del.addEventListener('click', () => deletePlan(p.id));
+      list.append(el('div', { className: 'plan-row' }, [
+        el('span', { className: 'pname', textContent: p.name }),
+        el('span', { className: 'pdate', textContent: p.createdAt || '' }),
+        load, del,
+      ]));
+    }
+  } catch (err) { setError(err.message); }
+}
+
+function exportCsv() {
+  const rows = [['order', 'caseId', 'name', 'weight_kg', 'x_mm', 'y_mm', 'z_mm', 'dx_mm', 'dy_mm', 'dz_mm', 'up']];
+  viewer.placements().forEach((p, i) => {
+    const c = planCaseById.get(p.caseId);
+    rows.push([
+      i + 1, p.caseId, c?.name || '', c?.weight ?? '',
+      p.pos[0], p.pos[1], p.pos[2], p.size[0], p.size[1], p.size[2], p.up,
+    ]);
+  });
+  const csv = rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: 'loading-plan.csv' });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// csvCell quotes a value when it contains a comma, quote, or newline.
+function csvCell(v) {
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 // --- boot --------------------------------------------------------------------
 
 async function boot() {
@@ -312,8 +417,11 @@ async function boot() {
   $('#case-cancel').addEventListener('click', resetCaseForm);
   $('#truck-form').addEventListener('submit', submitTruck);
   $('#solve').addEventListener('click', solve);
+  $('#save-plan').addEventListener('click', savePlan);
+  $('#export-csv').addEventListener('click', exportCsv);
   try {
     await refreshData();
+    await renderPlanList();
     await solve(); // show an initial plan
   } catch (err) { setError(err.message); }
 }
