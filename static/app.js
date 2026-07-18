@@ -47,6 +47,38 @@ let planUnplaced = [];
 let manualPlacements = [];
 let stagedSet = new Set();
 
+// Undo history of manual moves. Each entry is a snapshot taken at drag start.
+const undoStack = [];
+const UNDO_LIMIT = 50;
+
+function snapshot() {
+  return {
+    placements: manualPlacements.map((p) => ({
+      instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
+    })),
+    staged: new Set(stagedSet),
+  };
+}
+
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+}
+
+function undo() {
+  const snap = undoStack.pop();
+  if (!snap) return;
+  manualPlacements = snap.placements;
+  stagedSet = snap.staged;
+  renderManual({ keepCamera: true });
+  onPlacementsChanged(clonePlacements());
+}
+
+// Options shared by every editable render, so drags snapshot for undo.
+function editorOpts(keepCamera) {
+  return { onChange: onPlacementsChanged, onDragStart: pushUndo, keepCamera };
+}
+
 async function refreshData() {
   [cases, trucks] = await Promise.all([api('GET', '/api/cases'), api('GET', '/api/trucks')]);
   renderCaseTable();
@@ -344,7 +376,7 @@ function clonePlacements() {
 
 function renderManual({ keepCamera }) {
   const plan = { truck: planTruck, placements: clonePlacements(), unplaced: [] };
-  viewer.render(plan, planCaseById, { onChange: onPlacementsChanged, keepCamera });
+  viewer.render(plan, planCaseById, editorOpts(keepCamera));
   $('#stat-truck').textContent = planTruck.name;
   $('#stat-placed').textContent = manualPlacements.length;
   $('#stat-unplaced').textContent = 0;
@@ -371,8 +403,9 @@ async function solve() {
       instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
     }));
     stagedSet = new Set();
+    undoStack.length = 0; // fresh plan, clear history
     // Re-solving discards any manual edits and overrides with the solver result.
-    viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
+    viewer.render(plan, planCaseById, editorOpts(false));
     renderPlanStats(plan, planCaseById);
   } catch (err) { setError(err.message); }
 }
@@ -514,8 +547,9 @@ async function loadPlan(id) {
       instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
     }));
     stagedSet = new Set();
+    undoStack.length = 0; // fresh plan, clear history
 
-    viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
+    viewer.render(plan, planCaseById, editorOpts(false));
     $('#stat-truck').textContent = truck.name;
     $('#stat-placed').textContent = plan.placements.length;
     $('#stat-unplaced').textContent = planUnplaced.length;
@@ -609,6 +643,15 @@ async function boot() {
   $('#save-plan').addEventListener('click', savePlan);
   $('#loading-sheet').addEventListener('click', printLoadingSheet);
   $('#export-csv').addEventListener('click', exportCsv);
+
+  // Ctrl/Cmd+Z undoes the last manual move (ignored while typing in a field).
+  window.addEventListener('keydown', (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing) {
+      e.preventDefault();
+      undo();
+    }
+  });
   try {
     await refreshData();
     await renderPlanList();

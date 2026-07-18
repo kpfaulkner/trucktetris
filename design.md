@@ -215,6 +215,10 @@ Editor (`static/viewer.js`, `static/app.js`):
   dots** — the case keeps its own colour so its type stays identifiable (an earlier version
   filled the whole box red, which lost the colour coding).
 - **Solve & render** re-runs the solver and discards manual edits (the solver output overrides).
+- **Undo (Ctrl/Cmd+Z):** the viewer fires an `onDragStart` callback at each drag's start; the app
+  pushes a placement snapshot (positions + staged/loaded state) onto an undo stack. Ctrl+Z pops
+  the last snapshot and restores it, so one press reverts a whole drag gesture (not per-pixel).
+  Up to 50 levels; ignored while typing in a form field; cleared on Solve / Load (fresh plan).
 
 **Done when:** user drags a case to a new valid spot, sees updated axle/weight readouts, and
 overlaps/violations are flagged. ✅

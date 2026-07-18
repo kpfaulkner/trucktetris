@@ -48,6 +48,7 @@ export function createViewer(container) {
   let entries = [];        // { caseId, type, group, mesh, pos:[3], size:[3], up }
   let truckDim = null;     // { l, w, h } in mm
   let onChange = null;     // callback(placements) during/after a drag
+  let onDragStart = null;  // callback() at the start of a drag (for undo)
 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
@@ -215,6 +216,7 @@ export function createViewer(container) {
     clearContent();
     truckDim = plan.truck.dim;
     onChange = opts.onChange || null;
+    onDragStart = opts.onDragStart || null;
     addTruck(plan.truck);
     for (const p of plan.placements) {
       addCase(p);
@@ -245,6 +247,7 @@ export function createViewer(container) {
     if (!hits.length) return;
 
     const entry = hits[0].object.userData.entry;
+    if (onDragStart) onDragStart(); // snapshot for undo before the move
     // Horizontal plane at the box base height; drag slides it at its level.
     const baseY = entry.pos[2] * MM;
     dragPlane.set(new THREE.Vector3(0, 1, 0), -baseY);
