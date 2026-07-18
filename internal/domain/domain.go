@@ -66,6 +66,10 @@ type Placement struct {
 	// front-left-floor of the load space. x = along length, y = across width,
 	// z = up.
 	Pos [3]int `json:"pos"`
+	// Size is the case's world-aligned extent (dx,dy,dz) in mm once oriented,
+	// matching the Pos axes. Fully describes the box footprint + height, which
+	// Up alone cannot when length != width.
+	Size [3]int `json:"size"`
 	// Up is which case axis points up in this placement.
 	Up Axis `json:"up"`
 }

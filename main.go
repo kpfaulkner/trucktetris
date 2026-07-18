@@ -17,7 +17,7 @@ var staticFiles embed.FS
 func main() {
 	addr := os.Getenv("ADDR")
 	if addr == "" {
-		addr = ":8080"
+		addr = ":8081"
 	}
 
 	staticFS, err := fs.Sub(staticFiles, "static")

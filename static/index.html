@@ -5,34 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Truck Tetris</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
-    pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; border-radius: 6px; }
-    button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+    #app { display: flex; height: 100%; }
+    #view { flex: 1; position: relative; background: #1a1d21; }
+    #view canvas { display: block; }
+    #panel {
+      width: 20rem; padding: 1rem; overflow-y: auto;
+      border-left: 1px solid #ddd; background: #fafafa;
+    }
+    h1 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+    .stat { display: flex; justify-content: space-between; padding: 0.2rem 0; }
+    .stat b { font-variant-numeric: tabular-nums; }
+    #legend { margin-top: 1rem; }
+    .legend-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
+    .swatch { width: 1rem; height: 1rem; border-radius: 3px; border: 1px solid #0003; }
+    #unplaced { margin-top: 1rem; color: #b00; font-size: 0.9rem; }
+    button { padding: 0.5rem 1rem; font-size: 0.95rem; cursor: pointer; width: 100%; margin-bottom: 0.5rem; }
   </style>
 </head>
 <body>
-  <h1>Truck Tetris</h1>
-  <p>M1 skeleton. 3D viewer arrives in M3.</p>
-  <button id="load">Load sample &amp; solve</button>
-  <h2>Sample data</h2>
-  <pre id="sample">—</pre>
-  <h2>Solve result</h2>
-  <pre id="plan">—</pre>
+  <div id="app">
+    <div id="view"></div>
+    <div id="panel">
+      <h1>Truck Tetris</h1>
+      <button id="reload">Reload &amp; solve</button>
+      <div class="stat"><span>Truck</span><b id="truck-name">—</b></div>
+      <div class="stat"><span>Placed</span><b id="placed">—</b></div>
+      <div class="stat"><span>Unplaced</span><b id="unplaced-count">—</b></div>
+      <div class="stat"><span>Total weight</span><b id="weight">—</b></div>
+      <div id="legend"></div>
+      <div id="unplaced"></div>
+    </div>
+  </div>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-
-    $('load').addEventListener('click', async () => {
-      const sample = await (await fetch('/api/sample')).json();
-      $('sample').textContent = JSON.stringify(sample, null, 2);
-
-      const plan = await (await fetch('/api/solve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sample),
-      })).json();
-      $('plan').textContent = JSON.stringify(plan, null, 2);
-    });
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.js" } }
   </script>
+  <script type="module" src="/viewer.js"></script>
 </body>
 </html>

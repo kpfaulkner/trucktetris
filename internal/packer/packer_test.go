@@ -11,19 +11,11 @@ type box struct {
 	min, max [3]int
 }
 
-// resolve turns a placement back into world extents using the case's oriented
-// dimensions, so tests can check bounds and overlaps.
-func resolve(c domain.Case, p domain.Placement) box {
-	var dx, dy, dz int
-	for _, o := range orientations(c) {
-		if o.up == p.Up {
-			dx, dy, dz = o.dx, o.dy, o.dz
-			break
-		}
-	}
+// resolve turns a placement into world extents from its stored size.
+func resolve(p domain.Placement) box {
 	return box{
 		min: p.Pos,
-		max: [3]int{p.Pos[0] + dx, p.Pos[1] + dy, p.Pos[2] + dz},
+		max: [3]int{p.Pos[0] + p.Size[0], p.Pos[1] + p.Size[1], p.Pos[2] + p.Size[2]},
 	}
 }
 
@@ -65,7 +57,7 @@ func validatePlan(t *testing.T, req domain.SolveRequest, plan domain.LoadPlan) {
 			t.Errorf("case %s placed with disallowed up-axis %s", c.ID, p.Up)
 		}
 
-		b := resolve(c, p)
+		b := resolve(p)
 		for i := range 3 {
 			if b.min[i] < 0 {
 				t.Errorf("case %s extends below origin on axis %d", c.ID, i)

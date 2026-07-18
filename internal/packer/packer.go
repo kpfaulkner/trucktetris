@@ -106,6 +106,7 @@ func (Shelf) Pack(req domain.SolveRequest) domain.LoadPlan {
 		plan.Placements = append(plan.Placements, domain.Placement{
 			CaseID: c.ID,
 			Pos:    [3]int{x, y, z},
+			Size:   [3]int{o.dx, o.dy, o.dz},
 			Up:     o.up,
 		})
 		plan.Summary.TotalWeight += c.Weight
