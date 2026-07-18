@@ -1,10 +1,17 @@
 package packer
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/kenfaulkner/trucktetris/internal/domain"
 )
+
+// item pairs an input case with its assigned instance ID for this pack run.
+type item struct {
+	c      domain.Case
+	instID string
+}
 
 // Stacker is the M5 packer. It extends the volume-only sweep with real
 // stacking: cases may rest on the floor or fully on top of a single supporting
@@ -34,15 +41,23 @@ type point struct{ x, y, z int }
 func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 	t := req.Truck
 
+	// Give each input case a stable instance ID up front so the same case
+	// loaded multiple times has distinct placements. Assigned before sorting so
+	// identity does not depend on pack order.
+	perCase := map[string]int{}
+	items := make([]item, len(req.Cases))
+	for i, c := range req.Cases {
+		items[i] = item{c: c, instID: fmt.Sprintf("%s#%d", c.ID, perCase[c.ID])}
+		perCase[c.ID]++
+	}
+
 	// Heaviest first: keeps heavy cases low, helps the axle work in M6, and
 	// gives light cases something solid to sit on.
-	cases := make([]domain.Case, len(req.Cases))
-	copy(cases, req.Cases)
-	sort.SliceStable(cases, func(i, j int) bool {
-		if cases[i].Weight != cases[j].Weight {
-			return cases[i].Weight > cases[j].Weight
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].c.Weight != items[j].c.Weight {
+			return items[i].c.Weight > items[j].c.Weight
 		}
-		return volume(cases[i]) > volume(cases[j])
+		return volume(items[i].c) > volume(items[j].c)
 	})
 
 	plan := domain.LoadPlan{Truck: t, Placements: []domain.Placement{}, Unplaced: []string{}}
@@ -53,7 +68,8 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 	points := []point{{0, 0, 0}}
 	var loads []domain.PointLoad // point loads of placed cases, for axle checks
 
-	for _, c := range cases {
+	for _, it := range items {
+		c := it.c
 		if total+c.Weight > t.GrossMax {
 			plan.Unplaced = append(plan.Unplaced, c.ID)
 			continue
@@ -82,10 +98,11 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 		loads = append(loads, caseLoad(p.min[0], o.dx, c.Weight))
 
 		plan.Placements = append(plan.Placements, domain.Placement{
-			CaseID: c.ID,
-			Pos:    [3]int{p.min[0], p.min[1], p.min[2]},
-			Size:   [3]int{o.dx, o.dy, o.dz},
-			Up:     o.up,
+			InstanceID: it.instID,
+			CaseID:     c.ID,
+			Pos:        [3]int{p.min[0], p.min[1], p.min[2]},
+			Size:       [3]int{o.dx, o.dy, o.dz},
+			Up:         o.up,
 		})
 		plan.Summary.TotalWeight += c.Weight
 
@@ -129,34 +146,49 @@ func caseLoad(minX, dx, weight int) domain.PointLoad {
 	return domain.PointLoad{X: minX + dx/2, Weight: weight}
 }
 
-// findSpot searches candidate points and orientations for a legal placement of
-// c. Points are tried lowest-first so cases settle down rather than float high;
-// as a tie-break they are biased toward the nearest axle so heavy cases sit
-// over the axles. A candidate is rejected if adding c there would overload any
-// axle.
+// score ranks a candidate placement; lower is better. Compared field by field.
+type score struct {
+	axle  int // distance to nearest axle (0 unless the case is biased over axles)
+	floor int // 0 when stacked on another box, 1 when on the floor (prefer stacking)
+	z     int // lower resting height preferred
+	x, y  int // bottom-left-back tie-break for compact floor use
+}
+
+func (s score) less(o score) bool {
+	switch {
+	case s.axle != o.axle:
+		return s.axle < o.axle
+	case s.floor != o.floor:
+		return s.floor < o.floor
+	case s.z != o.z:
+		return s.z < o.z
+	case s.x != o.x:
+		return s.x < o.x
+	default:
+		return s.y < o.y
+	}
+}
+
+// findSpot searches candidate points and orientations for the best legal
+// placement of c. It prefers stacking onto an existing compatible box (so the
+// floor is reserved for items that cannot stack), keeps heavy cases over the
+// axles, and settles cases low and to the back-left. A candidate is rejected if
+// adding c there would overload any axle; bearing and single-support rules keep
+// columns physically valid (so, e.g., amp stacks cap out where bearing runs
+// out).
 func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, points []point, loads []domain.PointLoad) (point, orientation, int, bool) {
-	// Only heavy cases are biased over the axles; lighter cases pack for
-	// density (lowest, then front-most).
+	// Only heavy cases are biased over the axles; lighter cases pack for density.
 	biasToAxle := t.IsHeavy(c.Weight)
 
-	cand := make([]point, len(points))
-	copy(cand, points)
-	sort.SliceStable(cand, func(i, j int) bool {
-		if cand[i].z != cand[j].z {
-			return cand[i].z < cand[j].z
-		}
-		if biasToAxle {
-			if di, dj := axleDist(t, cand[i].x), axleDist(t, cand[j].x); di != dj {
-				return di < dj
-			}
-		}
-		if cand[i].x != cand[j].x {
-			return cand[i].x < cand[j].x
-		}
-		return cand[i].y < cand[j].y
-	})
+	var (
+		best       score
+		bestPoint  point
+		bestOrient orientation
+		bestParent int
+		found      bool
+	)
 
-	for _, pt := range cand {
+	for _, pt := range points {
 		for _, o := range orientations(c) {
 			bmin := [3]int{pt.x, pt.y, pt.z}
 			bmax := [3]int{pt.x + o.dx, pt.y + o.dy, pt.z + o.dz}
@@ -174,10 +206,20 @@ func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, 
 			if !axleFeasible(t, loads, caseLoad(pt.x, o.dx, c.Weight)) {
 				continue
 			}
-			return pt, o, parent, true
+
+			s := score{floor: 1, z: pt.z, x: pt.x, y: pt.y}
+			if parent != -1 {
+				s.floor = 0 // resting on another box conserves floor
+			}
+			if biasToAxle {
+				s.axle = axleDist(t, pt.x)
+			}
+			if !found || s.less(best) {
+				best, bestPoint, bestOrient, bestParent, found = s, pt, o, parent, true
+			}
 		}
 	}
-	return point{}, orientation{}, -1, false
+	return bestPoint, bestOrient, bestParent, found
 }
 
 // axleDist returns the distance from x to the nearest axle, or 0 when the truck

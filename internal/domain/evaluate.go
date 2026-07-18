@@ -43,20 +43,20 @@ func EvaluatePlan(t Truck, placements []Placement, cases map[string]Case) Evalua
 			p.Pos[0]+p.Size[0] > t.Dim.L ||
 			p.Pos[1]+p.Size[1] > t.Dim.W ||
 			p.Pos[2]+p.Size[2] > t.Dim.H {
-			e.OutOfBounds = append(e.OutOfBounds, p.CaseID)
+			e.OutOfBounds = append(e.OutOfBounds, p.InstanceID)
 		}
 
 		for j := i + 1; j < len(placements); j++ {
 			if boxesOverlap(p, placements[j]) {
-				collision[p.CaseID] = true
-				collision[placements[j].CaseID] = true
+				collision[p.InstanceID] = true
+				collision[placements[j].InstanceID] = true
 			}
 		}
 	}
 
 	for _, p := range placements {
-		if collision[p.CaseID] {
-			e.Collisions = append(e.Collisions, p.CaseID)
+		if collision[p.InstanceID] {
+			e.Collisions = append(e.Collisions, p.InstanceID)
 		}
 	}
 
@@ -95,14 +95,14 @@ func evaluateStacking(e *Evaluation, placements []Placement, cases map[string]Ca
 			continue
 		}
 		if len(supporters[i]) == 0 {
-			unsupported[p.CaseID] = true
+			unsupported[p.InstanceID] = true
 			continue
 		}
 		top := cases[p.CaseID]
 		for _, s := range supporters[i] {
 			sup := cases[placements[s].CaseID]
 			if !sup.Stackable || !stackableOnType(top, sup.Type) {
-				illegal[p.CaseID] = true
+				illegal[p.InstanceID] = true
 			}
 		}
 	}
@@ -134,19 +134,19 @@ func evaluateStacking(e *Evaluation, placements []Placement, cases map[string]Ca
 	overloaded := map[string]bool{}
 	for i, p := range placements {
 		if loadOn[i] > float64(cases[p.CaseID].MaxStackWeight) {
-			overloaded[p.CaseID] = true
+			overloaded[p.InstanceID] = true
 		}
 	}
 
 	for _, p := range placements {
-		if unsupported[p.CaseID] {
-			e.Unsupported = append(e.Unsupported, p.CaseID)
+		if unsupported[p.InstanceID] {
+			e.Unsupported = append(e.Unsupported, p.InstanceID)
 		}
-		if illegal[p.CaseID] {
-			e.IllegalStacks = append(e.IllegalStacks, p.CaseID)
+		if illegal[p.InstanceID] {
+			e.IllegalStacks = append(e.IllegalStacks, p.InstanceID)
 		}
-		if overloaded[p.CaseID] {
-			e.Overloaded = append(e.Overloaded, p.CaseID)
+		if overloaded[p.InstanceID] {
+			e.Overloaded = append(e.Overloaded, p.InstanceID)
 		}
 	}
 }

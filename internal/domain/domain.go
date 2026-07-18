@@ -80,7 +80,11 @@ func (t Truck) IsHeavy(w int) bool {
 
 // Placement positions one case inside the truck.
 type Placement struct {
-	CaseID string `json:"caseId"`
+	// InstanceID uniquely identifies this placed box, so the same case loaded
+	// multiple times has distinct placements. CaseID references the case
+	// definition (dimensions, weight, stacking rules).
+	InstanceID string `json:"instanceId"`
+	CaseID     string `json:"caseId"`
 	// Pos is the origin corner (minimum x,y,z) of the case, mm, relative to the
 	// front-left-floor of the load space. x = along length, y = across width,
 	// z = up.

@@ -141,6 +141,35 @@ func TestStackerRejectsDisallowedStack(t *testing.T) {
 	}
 }
 
+func TestStackerBuildsColumnsToFreeFloor(t *testing.T) {
+	// Floor fits only one footprint, but the truck is tall enough for two and the
+	// case bears its own weight — so the second must stack on the first rather
+	// than be left unplaced.
+	req := domain.SolveRequest{
+		Truck: domain.Truck{ID: "t", Dim: domain.Dimensions{L: 500, W: 500, H: 1000}, GrossMax: 100000},
+		Cases: []domain.Case{
+			{ID: "amp", Type: "rack", Dim: domain.Dimensions{L: 500, W: 500, H: 500},
+				Weight: 90, Stackable: true, StackableOn: []string{"rack"}, MaxStackWeight: 200},
+			{ID: "amp", Type: "rack", Dim: domain.Dimensions{L: 500, W: 500, H: 500},
+				Weight: 90, Stackable: true, StackableOn: []string{"rack"}, MaxStackWeight: 200},
+		},
+	}
+	plan := Stacker{}.Pack(req)
+	if plan.Summary.PlacedCount != 2 {
+		t.Fatalf("both amps should fit by stacking, placed=%d", plan.Summary.PlacedCount)
+	}
+	stacked := false
+	for _, p := range plan.Placements {
+		if p.Pos[2] > 0 {
+			stacked = true
+		}
+	}
+	if !stacked {
+		t.Fatal("expected one amp stacked above the other (z>0)")
+	}
+	validateStack(t, req, plan)
+}
+
 func TestStackerReportsUtilisation(t *testing.T) {
 	// One 1000x1000x1000 case in a 2000x1000x1000 truck = half the volume.
 	// Weight 500 of gross 1000 = half the weight.

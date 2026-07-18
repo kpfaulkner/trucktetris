@@ -12,13 +12,18 @@ const MM = 0.001; // mm -> m
 const SNAP = 50;  // grid snap, mm
 const BAD = 0xd00000; // colour for a case that collides or is out of bounds
 
-const PALETTE = [0x4e79a7, 0xf28e2b, 0x59a14f, 0xe15759, 0xb07aa1, 0x76b7b2, 0xedc948, 0xff9da7];
-const typeColours = new Map();
-export function colourFor(type) {
-  if (!typeColours.has(type)) {
-    typeColours.set(type, PALETTE[typeColours.size % PALETTE.length]);
+const PALETTE = [
+  0x4e79a7, 0xf28e2b, 0x59a14f, 0xe15759, 0xb07aa1, 0x76b7b2, 0xedc948, 0xff9da7,
+  0x9c755f, 0x1f77b4, 0x2ca02c, 0xd62728, 0x9467bd, 0x8c564b, 0x17becf, 0xbcbd22,
+];
+// Colour keyed per case (by id), not per type, so different cases are visually
+// distinct even when they share a type.
+const caseColours = new Map();
+export function colourFor(key) {
+  if (!caseColours.has(key)) {
+    caseColours.set(key, PALETTE[caseColours.size % PALETTE.length]);
   }
-  return typeColours.get(type);
+  return caseColours.get(key);
 }
 
 export function createViewer(container) {
@@ -107,11 +112,11 @@ export function createViewer(container) {
     );
   }
 
-  function addCase(placement, type) {
+  function addCase(placement) {
     const size = placement.size;
     const geo = new THREE.BoxGeometry(size[0] * MM, size[2] * MM, size[1] * MM);
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-      color: colourFor(type), transparent: true, opacity: 0.9,
+      color: colourFor(placement.caseId), transparent: true, opacity: 0.9,
     }));
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(geo),
@@ -123,7 +128,7 @@ export function createViewer(container) {
     contentGroup.add(group);
 
     const entry = {
-      caseId: placement.caseId, type, group, mesh,
+      instanceId: placement.instanceId, caseId: placement.caseId, group, mesh,
       pos: [...placement.pos], size: [...size], up: placement.up,
     };
     mesh.userData.entry = entry;
@@ -140,7 +145,7 @@ export function createViewer(container) {
 
   function placements() {
     return entries.map((e) => ({
-      caseId: e.caseId, pos: [...e.pos], size: [...e.size], up: e.up,
+      instanceId: e.instanceId, caseId: e.caseId, pos: [...e.pos], size: [...e.size], up: e.up,
     }));
   }
 
@@ -151,7 +156,7 @@ export function createViewer(container) {
       ...(ev.unsupported || []), ...(ev.illegalStacks || []), ...(ev.overloaded || []),
     ]);
     for (const e of entries) {
-      e.mesh.material.color.setHex(bad.has(e.caseId) ? BAD : colourFor(e.type));
+      e.mesh.material.color.setHex(bad.has(e.instanceId) ? BAD : colourFor(e.caseId));
     }
   }
 
@@ -161,7 +166,7 @@ export function createViewer(container) {
     onChange = opts.onChange || null;
     const dims = addTruck(plan.truck);
     for (const p of plan.placements) {
-      addCase(p, caseById.get(p.caseId)?.type || 'unknown');
+      addCase(p);
     }
     frameCamera(dims);
     resize();

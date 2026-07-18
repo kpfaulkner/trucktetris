@@ -13,7 +13,8 @@ func evalTruck() Truck {
 }
 
 func place(id string, x, y, z, dx, dy, dz int) Placement {
-	return Placement{CaseID: id, Pos: [3]int{x, y, z}, Size: [3]int{dx, dy, dz}}
+	// Tests use unique ids, so instance == case id here.
+	return Placement{InstanceID: id, CaseID: id, Pos: [3]int{x, y, z}, Size: [3]int{dx, dy, dz}}
 }
 
 // wcases builds a case map from id->weight, with no stacking rules.

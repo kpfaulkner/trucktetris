@@ -37,7 +37,8 @@ feeds the solver and 3D view.
     `canLieOnSide` (may be rotated off upright).
   - `Truck`: id, name, internal dimensions, axle positions (distance from front), per-axle
     max load, gross max weight.
-  - `Placement`: case id, position (x,y,z origin corner), world-aligned size (dx,dy,dz), up-axis.
+  - `Placement`: instance id (unique per placed box), case id, position (x,y,z origin corner),
+    world-aligned size (dx,dy,dz), up-axis. (Instance id added in M7 for loading duplicates.)
   - `LoadPlan`: truck, list of `Placement`, list of unplaced case ids, summary stats.
 - Units convention: millimetres + kilograms everywhere. Documented in one place.
 - HTTP server: serves static assets, `/api/health`, stub `/api/solve` echoing input.
@@ -62,7 +63,10 @@ any cases that did not fit.
 **Goal:** See the plan. Read-only render.
 
 - Three.js. `BoxGeometry` per placed case, `EdgesGeometry` outline for readability.
-- Colour by case type, legend.
+- Colour **per case** (keyed by case id) from a fixed palette, so different cases are visually
+  distinct even when they share a type. (Originally coloured by type, but two cases of the same
+  type — e.g. the cable and lighting trunks — came out identical; switched to per-case.) The same
+  colour map is shared with the selection-list swatches for consistency.
 - Truck container as wireframe / semi-transparent walls.
 - `OrbitControls`: orbit / pan / zoom.
 - Loads `LoadPlan` JSON from `/api/solve`.
@@ -164,11 +168,16 @@ for density. Per-axle max load is still enforced for every case. Threshold 0 dis
 
 Evaluation stays in Go and is reused by the editor (`domain.EvaluatePlan`, `POST /api/evaluate`):
 
-- Request `{truckId, placements}`; the server looks up each case's weight from the store, then
-  returns `Evaluation{axleLoads, totalWeight, overGross, collisions[], outOfBounds[]}`.
-- Reuses the M6 axle-load model; AABB overlap check (touching faces do **not** count) and a
-  bounds check against the load space. Keeps all rules server-side — the browser only renders
-  feedback.
+- Request `{truckId, placements}`; the server looks up each referenced case from the store (for
+  weight + stacking rules), then returns `Evaluation{axleLoads, totalWeight, overGross,
+  collisions[], outOfBounds[], unsupported[], illegalStacks[], overloaded[]}`.
+- Reuses the M6 axle-load model; AABB overlap check (touching faces do **not** count), a bounds
+  check, and — added after a bug where manual stacks bypassed the solver's rules — the full
+  stacking checks: support (no floating box), stack legality (`stackable` + `stackableOn` type),
+  and bearing capacity down the support chain. Keeps all rules server-side — the browser only
+  renders feedback.
+- Violation lists are keyed by placement **instance ID** (see below), not case ID, so duplicate
+  cases are flagged independently.
 
 Editor (`static/viewer.js`, `static/app.js`):
 
@@ -191,6 +200,17 @@ footprint — the highest overlapping box top, or the floor if none. Dragging a 
 lifts it on top; dragging it back to clear floor drops it down. No separate vertical control is
 needed. (A drag that leaves a box overhanging or interpenetrating is flagged red by the
 evaluation, same as any other violation.)
+
+Quantity + placement identity:
+
+- The "build a load" selection takes a **quantity** per case (0 = skip), so the same case can be
+  loaded multiple times.
+- Each placement carries a unique `instanceId` (`caseId#n`) as its identity; `caseId` stays the
+  definition reference (dimensions, weight, rules). The solver assigns instance IDs before
+  packing.
+- Everything that acts on an individual box — collision/violation flagging, drag selection,
+  recolouring, CSV rows — keys off `instanceId`, so dragging or flagging one copy never affects
+  its identical twin.
 
 **Scope notes:**
 - Manual placements persist **in-session** (client state; survive tab switches, cleared on
@@ -215,6 +235,10 @@ Save / load named plans:
 - A save captures the **current** placements, including manual edits from M7. Loading fetches the
   plan + its truck, rebuilds the 3D view (editable), and re-derives live stats via
   `/api/evaluate`.
+- Loading also **syncs the "build a load" controls** back to the saved plan: the truck dropdown is
+  set to the plan's truck, and each case's quantity is set to its count in the plan (placed
+  instances + unplaced entries; 0 for cases not in it). So the selection reflects what was loaded
+  and can be re-solved from there.
 - Plan panel: name field + Save, and a list of saved plans with Load / Delete.
 
 Export:
@@ -227,6 +251,15 @@ Case + truck library management: already delivered in M4 (Manage tab); M7 added 
 editing.
 
 **Done when:** a plan can be saved, reloaded, and exported for use by loaders. ✅
+
+### M9 - paperwork
+- Determine how PDF should look that would describe the loadout in a meaningful way.
+  Should it be listing the types in the order they should be loaded?
+- Should PDF contain 2D imagery showing the layout?
+
+### M10 — Disclaimer
+- Need to have disclaimer saying the layout is just a suggestion and is not 
+  professional advice on how to load a truck.
 
 ### Notes
 - M1–M3 = walking skeleton on hardcoded data; value early, proves the full stack.

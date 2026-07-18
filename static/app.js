@@ -204,12 +204,13 @@ function renderSelection() {
   const list = $('#sel-cases');
   list.replaceChildren();
   for (const c of cases) {
-    const cb = el('input', { type: 'checkbox', value: c.id, checked: true });
-    cb.className = 'sel-case';
-    const hex = colourFor(c.type).toString(16).padStart(6, '0');
+    const qty = el('input', { type: 'number', min: '0', value: '1', title: 'How many to load' });
+    qty.className = 'sel-qty';
+    qty.dataset.id = c.id;
+    const hex = colourFor(c.id).toString(16).padStart(6, '0');
     const bears = c.stackable ? `bears ${c.maxStackWeight}kg` : 'no stacking';
     list.append(el('label', { className: 'sel-row' }, [
-      cb,
+      qty,
       el('span', { className: 'swatch', style: `background:#${hex}` }),
       el('span', {}, [
         el('span', { textContent: c.name }),
@@ -225,8 +226,13 @@ function renderSelection() {
 async function solve() {
   setError('');
   const truckId = $('#sel-truck').value;
-  const caseIds = [...document.querySelectorAll('.sel-case:checked')].map((c) => c.value);
+  const caseIds = [];
+  for (const q of document.querySelectorAll('.sel-qty')) {
+    const n = Math.max(0, parseInt(q.value, 10) || 0);
+    for (let i = 0; i < n; i++) caseIds.push(q.dataset.id);
+  }
   if (!truckId) { setError('Select a truck'); return; }
+  if (!caseIds.length) { setError('Set a quantity for at least one case'); return; }
   try {
     const plan = await api('POST', '/api/solve', { truckId, caseIds });
     planTruckId = truckId;
@@ -346,6 +352,17 @@ async function loadPlan(id) {
     planCaseById = new Map(cases.map((c) => [c.id, c]));
 
     const plan = { truck, placements: saved.placements || [], unplaced: planUnplaced };
+
+    // Sync the "build a load" quantities to the loaded plan: per case, count is
+    // placed instances plus any unplaced entries.
+    const counts = {};
+    for (const p of plan.placements) counts[p.caseId] = (counts[p.caseId] || 0) + 1;
+    for (const id of planUnplaced) counts[id] = (counts[id] || 0) + 1;
+    $('#sel-truck').value = truck.id;
+    for (const q of document.querySelectorAll('.sel-qty')) {
+      q.value = counts[q.dataset.id] || 0;
+    }
+
     viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
     $('#stat-truck').textContent = truck.name;
     $('#stat-placed').textContent = plan.placements.length;
