@@ -6,9 +6,6 @@ import (
 	"strings"
 )
 
-// validAxes is the set of orientation axes a case may declare.
-var validAxes = map[Axis]bool{AxisL: true, AxisW: true, AxisH: true}
-
 // Validate reports whether the case is well-formed. IDs are not checked here;
 // the store owns identity.
 func (c Case) Validate() error {
@@ -23,13 +20,8 @@ func (c Case) Validate() error {
 	if c.Weight <= 0 {
 		errs = append(errs, fmt.Errorf("weight must be positive, got %d", c.Weight))
 	}
-	if len(c.UprightAxes) == 0 {
-		errs = append(errs, errors.New("at least one allowed orientation is required"))
-	}
-	for _, a := range c.UprightAxes {
-		if !validAxes[a] {
-			errs = append(errs, fmt.Errorf("invalid orientation axis %q", a))
-		}
+	if c.MaxStackWeight < 0 {
+		errs = append(errs, fmt.Errorf("max stack weight cannot be negative, got %d", c.MaxStackWeight))
 	}
 	return errors.Join(errs...)
 }

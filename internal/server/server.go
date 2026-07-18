@@ -23,7 +23,7 @@ type api struct {
 // New builds the HTTP handler. staticFS serves the frontend assets; st is the
 // persistence layer.
 func New(staticFS fs.FS, st *store.Store) http.Handler {
-	a := &api{store: st, packer: packer.Shelf{}}
+	a := &api{store: st, packer: packer.Stacker{}}
 
 	mux := http.NewServeMux()
 

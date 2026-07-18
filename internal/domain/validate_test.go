@@ -5,7 +5,6 @@ import "testing"
 func validCase() Case {
 	return Case{
 		Name: "ok", Dim: Dimensions{L: 100, W: 100, H: 100}, Weight: 10,
-		UprightAxes: []Axis{AxisH},
 	}
 }
 
@@ -14,12 +13,12 @@ func TestCaseValidate(t *testing.T) {
 		mut     func(*Case)
 		wantErr bool
 	}{
-		"valid":           {func(*Case) {}, false},
-		"empty name":      {func(c *Case) { c.Name = "" }, true},
-		"zero dimension":  {func(c *Case) { c.Dim.W = 0 }, true},
-		"negative weight": {func(c *Case) { c.Weight = -1 }, true},
-		"no orientations": {func(c *Case) { c.UprightAxes = nil }, true},
-		"bad orientation": {func(c *Case) { c.UprightAxes = []Axis{"Z"} }, true},
+		"valid":              {func(*Case) {}, false},
+		"empty name":         {func(c *Case) { c.Name = "" }, true},
+		"zero dimension":     {func(c *Case) { c.Dim.W = 0 }, true},
+		"negative weight":    {func(c *Case) { c.Weight = -1 }, true},
+		"negative bearing":   {func(c *Case) { c.MaxStackWeight = -5 }, true},
+		"stackable is valid": {func(c *Case) { c.Stackable = true; c.MaxStackWeight = 50 }, false},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

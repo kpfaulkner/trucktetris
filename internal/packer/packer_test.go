@@ -47,12 +47,10 @@ func validatePlan(t *testing.T, req domain.SolveRequest, plan domain.LoadPlan) {
 	for _, p := range plan.Placements {
 		c := caseByID(req.Cases, p.CaseID)
 
-		allowed := false
-		for _, up := range c.UprightAxes {
-			if up == p.Up {
-				allowed = true
-			}
-		}
+		// Upright (H up) is always allowed; side/end orientations only when the
+		// case may lie on its side.
+		allowed := p.Up == domain.AxisH ||
+			(c.CanLieOnSide && (p.Up == domain.AxisW || p.Up == domain.AxisL))
 		if !allowed {
 			t.Errorf("case %s placed with disallowed up-axis %s", c.ID, p.Up)
 		}
@@ -112,7 +110,6 @@ func TestShelfReportsOversizedCaseUnplaced(t *testing.T) {
 		Truck: domain.Truck{ID: "tiny", Dim: domain.Dimensions{L: 500, W: 500, H: 500}},
 		Cases: []domain.Case{{
 			ID: "big", Dim: domain.Dimensions{L: 1000, W: 1000, H: 1000},
-			UprightAxes: []domain.Axis{domain.AxisH},
 		}},
 	}
 	plan := Shelf{}.Pack(req)
@@ -123,8 +120,8 @@ func TestShelfReportsOversizedCaseUnplaced(t *testing.T) {
 
 func TestUprightOnlyCaseNeverOnSide(t *testing.T) {
 	c := domain.Case{
-		Dim:         domain.Dimensions{L: 800, W: 700, H: 1200},
-		UprightAxes: []domain.Axis{domain.AxisH},
+		Dim:          domain.Dimensions{L: 800, W: 700, H: 1200},
+		CanLieOnSide: false,
 	}
 	for _, o := range orientations(c) {
 		if o.up != domain.AxisH {
@@ -132,6 +129,19 @@ func TestUprightOnlyCaseNeverOnSide(t *testing.T) {
 		}
 		if o.dz != 1200 {
 			t.Fatalf("upright orientation should keep H=1200 vertical, got dz=%d", o.dz)
+		}
+	}
+}
+
+func TestCanLieOnSideAddsOrientations(t *testing.T) {
+	c := domain.Case{Dim: domain.Dimensions{L: 800, W: 700, H: 1200}, CanLieOnSide: true}
+	ups := map[domain.Axis]bool{}
+	for _, o := range orientations(c) {
+		ups[o.up] = true
+	}
+	for _, want := range []domain.Axis{domain.AxisH, domain.AxisW, domain.AxisL} {
+		if !ups[want] {
+			t.Fatalf("expected orientation with up=%s", want)
 		}
 	}
 }

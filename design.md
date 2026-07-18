@@ -32,12 +32,13 @@ feeds the solver and 3D view.
 **Goal:** Foundations. Types + running server, no logic yet.
 
 - Core types:
-  - `Case`: id, name, dimensions (L×W×H, mm), weight (kg), type/category, list of case types
-    it may be stacked on, allowed orientations (which faces may sit down — some cases can lie
-    on their side, others must stay upright/regular orientation only).
+  - `Case`: id, name, dimensions (L×W×H, mm), weight (kg), type/category, plus the stacking and
+    orientation flags (see M5 for the finalised model): `stackable` (may bear load on top),
+    `stackableOn` (which types it may sit on), `maxStackWeight` (kg it can bear, when stackable),
+    `canLieOnSide` (may be rotated off upright).
   - `Truck`: id, name, internal dimensions, axle positions (distance from front), per-axle
     max load, gross max weight.
-  - `Placement`: case id, position (x,y,z origin corner), rotation/orientation.
+  - `Placement`: case id, position (x,y,z origin corner), world-aligned size (dx,dy,dz), up-axis.
   - `LoadPlan`: truck, list of `Placement`, list of unplaced case ids, summary stats.
 - Units convention: millimetres + kilograms everywhere. Documented in one place.
 - HTTP server: serves static assets, `/api/health`, stub `/api/solve` echoing input.
@@ -83,16 +84,42 @@ Go → JSON → render proven.
 **Done when:** user creates cases + a truck in the UI, selects them, and M2 solver runs on that
 data with no code edits.
 
-### M5 — Stacking rules + weight
+### M5 — Stacking rules + weight  ✅ implemented
 **Goal:** Solver respects stack compatibility and weight.
 
-- Enforce stackable-on rules: a case only sits on a type it is allowed to.
-- Max stack height + max weight bearing down on a bottom case.
-- Support check: a case needs sufficient supporting surface below (no floating boxes).
-- Track running total weight; reject/flag if over truck gross max.
+Stacking is **not** weight-only. Each `Case` carries explicit flags, and a case may be placed on
+top of a supporting case only when **all** of these hold:
+
+1. `stackable` — the supporting case is flagged to bear load at all. A `false` here blocks
+   stacking regardless of weight or type (e.g. a case with a sloped/fragile top).
+2. `stackableOn` — the supporting case's `type` is in the top case's allowed list (type-level
+   compatibility, layered on top of the `stackable` gate).
+3. `maxStackWeight` — the supporting case, and every case below it in the support chain, stays
+   within its bearing capacity (kg). Only meaningful when `stackable` is true.
+
+Orientation is a separate flag:
+
+- `canLieOnSide` — the upright orientation is always allowed; when true the packer may also lay
+  the case on its side or end. (Replaced the earlier per-axis `uprightAxes` model — simpler UI,
+  a single checkbox.)
+
+Solver (`packer.Stacker`, extreme-point heuristic):
+
+- Cases sorted heaviest-first (keeps heavy cases low; helps M6 axle work).
+- Support model: a stacked case rests **entirely** on the top face of exactly one supporting case
+  (no bridging across multiple boxes); otherwise it must sit on the floor. This is the "no
+  floating boxes" support check.
+- Weight bearing propagates down the whole support chain, not just the immediate parent.
+- Tracks running total weight; skips any case that would exceed the truck's `grossMax`.
+
+Persistence: `stackable`, `stackable_on`, `max_stack_weight`, `can_lie_on_side` columns, with
+additive `ALTER TABLE` migrations so pre-M5 databases upgrade in place.
 
 **Done when:** solver never stacks illegal combinations and never exceeds gross weight; viewer
-shows valid stacks.
+shows valid stacks. ✅
+
+**Not yet modelled:** max stack *height* as a separate per-case limit — currently bounded only by
+the truck's internal height. Revisit if real cases need a tighter cap.
 
 ### M6 — Axle constraints
 **Goal:** Legal weight distribution. Hardest solver piece.

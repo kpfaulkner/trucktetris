@@ -29,14 +29,23 @@ type Case struct {
 	Weight int        `json:"weight"` // kg
 	Type   string     `json:"type"`   // category, drives stacking + colour
 
+	// Stackable reports whether other cases may be placed on top of this one at
+	// all. False means nothing stacks on it, regardless of weight.
+	Stackable bool `json:"stackable"`
+
 	// StackableOn lists the case types this case may be placed on top of.
-	// Empty means it may only sit on the truck floor.
+	// Empty means it may only sit on the truck floor. This is a finer,
+	// type-level rule layered on top of the supporting case's Stackable flag.
 	StackableOn []string `json:"stackableOn"`
 
-	// UprightVertical lists which case axes are allowed to point up, i.e. the
-	// permitted orientations. A case that must stay regular/upright has only
-	// {AxisH}; a case that may also lie on its side includes AxisW and/or AxisL.
-	UprightAxes []Axis `json:"uprightAxes"`
+	// MaxStackWeight is the maximum weight, kg, this case may bear on top of it.
+	// Only meaningful when Stackable is true.
+	MaxStackWeight int `json:"maxStackWeight"`
+
+	// CanLieOnSide reports whether the case may be rotated off its upright
+	// orientation (onto a side or end). The upright orientation is always
+	// allowed; when true the packer may also lay the case down.
+	CanLieOnSide bool `json:"canLieOnSide"`
 }
 
 // Axle is one axle (or axle group) of a truck.

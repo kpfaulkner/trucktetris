@@ -53,15 +53,17 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) migrate() error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS cases (
-	id           TEXT PRIMARY KEY,
-	name         TEXT NOT NULL,
-	l            INTEGER NOT NULL,
-	w            INTEGER NOT NULL,
-	h            INTEGER NOT NULL,
-	weight       INTEGER NOT NULL,
-	type         TEXT NOT NULL,
-	stackable_on TEXT NOT NULL DEFAULT '[]',
-	upright_axes TEXT NOT NULL DEFAULT '[]'
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	l                INTEGER NOT NULL,
+	w                INTEGER NOT NULL,
+	h                INTEGER NOT NULL,
+	weight           INTEGER NOT NULL,
+	type             TEXT NOT NULL,
+	stackable        INTEGER NOT NULL DEFAULT 0,
+	stackable_on     TEXT NOT NULL DEFAULT '[]',
+	max_stack_weight INTEGER NOT NULL DEFAULT 0,
+	can_lie_on_side  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS trucks (
 	id        TEXT PRIMARY KEY,
@@ -74,6 +76,46 @@ CREATE TABLE IF NOT EXISTS trucks (
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+	// Additive column migrations for databases created by earlier versions.
+	for _, m := range []struct{ col, def string }{
+		{"max_stack_weight", "INTEGER NOT NULL DEFAULT 0"},
+		{"stackable", "INTEGER NOT NULL DEFAULT 0"},
+		{"can_lie_on_side", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := s.addColumnIfMissing("cases", m.col, m.def); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addColumnIfMissing adds a column to table when it is not already present, so
+// older databases pick up new fields without a destructive rebuild.
+func (s *Store) addColumnIfMissing(table, column, def string) error {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil // already present
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, def))
+	if err != nil {
+		return fmt.Errorf("add column %s.%s: %w", table, column, err)
 	}
 	return nil
 }
@@ -101,7 +143,7 @@ func (s *Store) seedIfEmpty() error {
 
 // ListCases returns all cases ordered by name.
 func (s *Store) ListCases() ([]domain.Case, error) {
-	rows, err := s.db.Query(`SELECT id, name, l, w, h, weight, type, stackable_on, upright_axes
+	rows, err := s.db.Query(`SELECT id, name, l, w, h, weight, type, stackable, stackable_on, max_stack_weight, can_lie_on_side
 		FROM cases ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -121,7 +163,7 @@ func (s *Store) ListCases() ([]domain.Case, error) {
 
 // GetCase returns one case by id, or ErrNotFound.
 func (s *Store) GetCase(id string) (domain.Case, error) {
-	row := s.db.QueryRow(`SELECT id, name, l, w, h, weight, type, stackable_on, upright_axes
+	row := s.db.QueryRow(`SELECT id, name, l, w, h, weight, type, stackable, stackable_on, max_stack_weight, can_lie_on_side
 		FROM cases WHERE id = ?`, id)
 	c, err := scanCase(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -138,16 +180,17 @@ func (s *Store) SaveCase(c domain.Case) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	stackable, _ := json.Marshal(c.StackableOn)
-	axes, _ := json.Marshal(c.UprightAxes)
+	stackableOn, _ := json.Marshal(c.StackableOn)
 	_, err := s.db.Exec(`
-		INSERT INTO cases (id, name, l, w, h, weight, type, stackable_on, upright_axes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO cases (id, name, l, w, h, weight, type, stackable, stackable_on, max_stack_weight, can_lie_on_side)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, l=excluded.l, w=excluded.w, h=excluded.h,
-			weight=excluded.weight, type=excluded.type,
-			stackable_on=excluded.stackable_on, upright_axes=excluded.upright_axes`,
-		c.ID, c.Name, c.Dim.L, c.Dim.W, c.Dim.H, c.Weight, c.Type, string(stackable), string(axes))
+			weight=excluded.weight, type=excluded.type, stackable=excluded.stackable,
+			stackable_on=excluded.stackable_on, max_stack_weight=excluded.max_stack_weight,
+			can_lie_on_side=excluded.can_lie_on_side`,
+		c.ID, c.Name, c.Dim.L, c.Dim.W, c.Dim.H, c.Weight, c.Type, c.Stackable,
+		string(stackableOn), c.MaxStackWeight, c.CanLieOnSide)
 	return err
 }
 
@@ -238,16 +281,13 @@ type scanner interface {
 
 func scanCase(sc scanner) (domain.Case, error) {
 	var c domain.Case
-	var stackable, axes string
+	var stackableOn string
 	if err := sc.Scan(&c.ID, &c.Name, &c.Dim.L, &c.Dim.W, &c.Dim.H, &c.Weight, &c.Type,
-		&stackable, &axes); err != nil {
+		&c.Stackable, &stackableOn, &c.MaxStackWeight, &c.CanLieOnSide); err != nil {
 		return domain.Case{}, err
 	}
-	if err := json.Unmarshal([]byte(stackable), &c.StackableOn); err != nil {
+	if err := json.Unmarshal([]byte(stackableOn), &c.StackableOn); err != nil {
 		return domain.Case{}, fmt.Errorf("decode stackable_on for %s: %w", c.ID, err)
-	}
-	if err := json.Unmarshal([]byte(axes), &c.UprightAxes); err != nil {
-		return domain.Case{}, fmt.Errorf("decode upright_axes for %s: %w", c.ID, err)
 	}
 	return c, nil
 }

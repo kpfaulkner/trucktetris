@@ -1,7 +1,9 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/kenfaulkner/trucktetris/internal/domain"
@@ -15,6 +17,40 @@ func openTest(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+func TestOpenUpgradesOldSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	// Simulate a pre-M5 database: cases table without max_stack_weight.
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.Exec(`CREATE TABLE cases (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, l INTEGER, w INTEGER, h INTEGER,
+		weight INTEGER, type TEXT, stackable_on TEXT DEFAULT '[]', upright_axes TEXT DEFAULT '[]');
+		INSERT INTO cases (id, name, l, w, h, weight, type, upright_axes)
+		VALUES ('old1', 'Legacy', 100, 100, 100, 10, 'x', '["H"]');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	// Open should add the missing column and read the legacy row.
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open old db: %v", err)
+	}
+	defer s.Close()
+
+	c, err := s.GetCase("old1")
+	if err != nil {
+		t.Fatalf("get legacy case: %v", err)
+	}
+	if c.MaxStackWeight != 0 {
+		t.Fatalf("legacy case max stack weight = %d, want 0", c.MaxStackWeight)
+	}
 }
 
 func TestSeedPopulatesSamples(t *testing.T) {
@@ -40,8 +76,8 @@ func TestCaseRoundTrip(t *testing.T) {
 	want := domain.Case{
 		ID: "c1", Name: "Test", Type: "rack",
 		Dim: domain.Dimensions{L: 100, W: 200, H: 300}, Weight: 50,
-		StackableOn: []string{"rack", "trunk"},
-		UprightAxes: []domain.Axis{domain.AxisH, domain.AxisW},
+		Stackable: true, StackableOn: []string{"rack", "trunk"},
+		MaxStackWeight: 70, CanLieOnSide: true,
 	}
 	if err := s.SaveCase(want); err != nil {
 		t.Fatalf("save: %v", err)
@@ -51,7 +87,8 @@ func TestCaseRoundTrip(t *testing.T) {
 		t.Fatalf("get: %v", err)
 	}
 	if got.Name != want.Name || got.Dim != want.Dim || got.Weight != want.Weight ||
-		len(got.StackableOn) != 2 || len(got.UprightAxes) != 2 {
+		got.Stackable != true || len(got.StackableOn) != 2 ||
+		got.MaxStackWeight != 70 || got.CanLieOnSide != true {
 		t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, want)
 	}
 }
@@ -59,7 +96,7 @@ func TestCaseRoundTrip(t *testing.T) {
 func TestSaveCaseUpserts(t *testing.T) {
 	s := openTest(t)
 	c := domain.Case{ID: "c1", Name: "V1", Dim: domain.Dimensions{L: 1, W: 1, H: 1},
-		Weight: 1, UprightAxes: []domain.Axis{domain.AxisH}}
+		Weight: 1}
 	if err := s.SaveCase(c); err != nil {
 		t.Fatal(err)
 	}
@@ -76,8 +113,7 @@ func TestSaveCaseUpserts(t *testing.T) {
 func TestSaveCaseRejectsInvalid(t *testing.T) {
 	s := openTest(t)
 	err := s.SaveCase(domain.Case{ID: "bad", Name: "x",
-		Dim: domain.Dimensions{L: -1, W: 1, H: 1}, Weight: 1,
-		UprightAxes: []domain.Axis{domain.AxisH}})
+		Dim: domain.Dimensions{L: -1, W: 1, H: 1}, Weight: 1})
 	if err == nil {
 		t.Fatal("expected validation error for negative dimension")
 	}
@@ -86,7 +122,7 @@ func TestSaveCaseRejectsInvalid(t *testing.T) {
 func TestDeleteCase(t *testing.T) {
 	s := openTest(t)
 	c := domain.Case{ID: "c1", Name: "x", Dim: domain.Dimensions{L: 1, W: 1, H: 1},
-		Weight: 1, UprightAxes: []domain.Axis{domain.AxisH}}
+		Weight: 1}
 	s.SaveCase(c)
 	if err := s.DeleteCase("c1"); err != nil {
 		t.Fatalf("delete: %v", err)

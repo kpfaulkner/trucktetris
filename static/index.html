@@ -78,7 +78,7 @@
       <section>
         <h2>Road cases</h2>
         <table>
-          <thead><tr><th>Name</th><th>L×W×H (mm)</th><th>Weight</th><th>Type</th><th>Orient.</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>L×W×H (mm)</th><th>Weight</th><th>Type</th><th>Stackable</th><th>Bears</th><th>On side</th><th></th></tr></thead>
           <tbody id="case-rows"></tbody>
         </table>
         <form id="case-form" class="entry">
@@ -88,12 +88,12 @@
           <label>W<input id="c-w" type="number" min="1" required></label>
           <label>H<input id="c-h" type="number" min="1" required></label>
           <label>Weight<input id="c-weight" type="number" min="1" required></label>
+          <label>Bears (kg on top)<input id="c-bears" type="number" min="0" value="0"></label>
           <label class="wide">Stackable on (types, comma)<input id="c-stack" type="text" class="wide" placeholder="rack, trunk"></label>
           <fieldset>
-            <legend>Orientations</legend>
-            <label><input id="c-axis-H" type="checkbox" checked> H upright</label>
-            <label><input id="c-axis-W" type="checkbox"> W on side</label>
-            <label><input id="c-axis-L" type="checkbox"> L on end</label>
+            <legend>Flags</legend>
+            <label><input id="c-stackable" type="checkbox"> Stackable (bears load on top)</label>
+            <label><input id="c-side" type="checkbox"> Can lie on side</label>
           </fieldset>
           <button type="submit">Add case</button>
         </form>

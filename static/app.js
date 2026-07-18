@@ -1,8 +1,6 @@
 // App orchestration: tab switching, CRUD forms, selection, and solving.
 import { createViewer, colourFor } from '/viewer.js';
 
-const AXES = ['H', 'W', 'L']; // upright, on-side (width up), on-end (length up)
-
 // --- tiny helpers ------------------------------------------------------------
 
 const $ = (sel) => document.querySelector(sel);
@@ -68,7 +66,9 @@ function renderCaseTable() {
       el('td', { textContent: `${c.dim.l}×${c.dim.w}×${c.dim.h}` }),
       el('td', { textContent: c.weight }),
       el('td', { textContent: c.type }),
-      el('td', { textContent: (c.uprightAxes || []).join(',') }),
+      el('td', { textContent: c.stackable ? 'yes' : 'no' }),
+      el('td', { textContent: c.stackable ? c.maxStackWeight : '—' }),
+      el('td', { textContent: c.canLieOnSide ? 'yes' : 'no' }),
     ]);
     const del = el('button', { textContent: 'Delete', className: 'small' });
     del.addEventListener('click', async () => {
@@ -81,14 +81,15 @@ function renderCaseTable() {
 }
 
 function readCaseForm() {
-  const axes = AXES.filter((a) => $(`#c-axis-${a}`).checked);
   return {
     name: $('#c-name').value.trim(),
     type: $('#c-type').value.trim() || 'default',
     dim: { l: +$('#c-l').value, w: +$('#c-w').value, h: +$('#c-h').value },
     weight: +$('#c-weight').value,
+    stackable: $('#c-stackable').checked,
+    maxStackWeight: +$('#c-bears').value,
     stackableOn: $('#c-stack').value.split(',').map((s) => s.trim()).filter(Boolean),
-    uprightAxes: axes,
+    canLieOnSide: $('#c-side').checked,
   };
 }
 

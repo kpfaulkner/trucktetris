@@ -21,26 +21,34 @@ func SampleCases() []Case {
 		{
 			ID: "case-amp", Name: "Amp rack", Type: "rack",
 			Dim: Dimensions{L: 800, W: 700, H: 1200}, Weight: 90,
-			StackableOn: nil,           // floor only
-			UprightAxes: []Axis{AxisH}, // upright only
+			Stackable:      true,
+			StackableOn:    nil, // floor only
+			MaxStackWeight: 120,
+			CanLieOnSide:   false, // upright only
 		},
 		{
 			ID: "case-speaker", Name: "Speaker case", Type: "speaker",
 			Dim: Dimensions{L: 1000, W: 700, H: 700}, Weight: 60,
-			StackableOn: []string{"speaker", "rack"},
-			UprightAxes: []Axis{AxisH, AxisW}, // may lie on side
+			Stackable:      true,
+			StackableOn:    []string{"speaker", "rack"},
+			MaxStackWeight: 80,
+			CanLieOnSide:   true,
 		},
 		{
 			ID: "case-cable", Name: "Cable trunk", Type: "trunk",
 			Dim: Dimensions{L: 900, W: 600, H: 600}, Weight: 45,
-			StackableOn: []string{"trunk", "rack", "speaker"},
-			UprightAxes: []Axis{AxisH, AxisW, AxisL}, // any orientation
+			Stackable:      true,
+			StackableOn:    []string{"trunk", "rack", "speaker"},
+			MaxStackWeight: 60,
+			CanLieOnSide:   true,
 		},
 		{
 			ID: "case-lighting", Name: "Lighting case", Type: "trunk",
 			Dim: Dimensions{L: 1200, W: 600, H: 500}, Weight: 55,
-			StackableOn: []string{"trunk"},
-			UprightAxes: []Axis{AxisH},
+			Stackable:      false, // sloped top, nothing on top
+			StackableOn:    []string{"trunk"},
+			MaxStackWeight: 0,
+			CanLieOnSide:   false,
 		},
 	}
 }

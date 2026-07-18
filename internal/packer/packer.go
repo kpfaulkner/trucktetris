@@ -26,7 +26,8 @@ type orientation struct {
 
 // orientations returns every axis-aligned placement allowed for a case: for
 // each permitted up-axis, both 90°-yaw footprints. Duplicates (square faces)
-// are removed.
+// are removed. The upright orientation (height up) is always allowed; when the
+// case may lie on its side, the width-up and length-up orientations are added.
 func orientations(c domain.Case) []orientation {
 	d := c.Dim
 	var out []orientation
@@ -41,15 +42,10 @@ func orientations(c domain.Case) []orientation {
 		}
 	}
 
-	for _, up := range c.UprightAxes {
-		switch up {
-		case domain.AxisH: // height vertical (upright)
-			add(d.L, d.W, d.H, up)
-		case domain.AxisW: // width vertical (on its side)
-			add(d.L, d.H, d.W, up)
-		case domain.AxisL: // length vertical (on its end)
-			add(d.W, d.H, d.L, up)
-		}
+	add(d.L, d.W, d.H, domain.AxisH) // upright: height vertical
+	if c.CanLieOnSide {
+		add(d.L, d.H, d.W, domain.AxisW) // on its side: width vertical
+		add(d.W, d.H, d.L, domain.AxisL) // on its end: length vertical
 	}
 	return out
 }
