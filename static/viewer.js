@@ -10,7 +10,6 @@ import { OrbitControls } from '/vendor/controls/OrbitControls.js';
 
 const MM = 0.001; // mm -> m
 const SNAP = 50;  // grid snap, mm
-const BAD = 0xd00000; // colour for a case that collides or is out of bounds
 
 const PALETTE = [
   0x4e79a7, 0xf28e2b, 0x59a14f, 0xe15759, 0xb07aa1, 0x76b7b2, 0xedc948, 0xff9da7,
@@ -85,7 +84,33 @@ export function createViewer(container) {
     contentGroup.add(grid);
 
     addAxles(truck, w, h);
+
+    // FRONT (x=0, kingpin/cab end) and BACK (x=L, doors) labels on the floor.
+    const front = makeLabel('FRONT', 0x33cc55);
+    front.position.set(0, 0.3, w / 2);
+    contentGroup.add(front);
+    const back = makeLabel('BACK', 0xdd4444);
+    back.position.set(l, 0.3, w / 2);
+    contentGroup.add(back);
+
     return { l, w, h };
+  }
+
+  // makeLabel builds a camera-facing text sprite from a canvas texture.
+  function makeLabel(text, colour) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#' + colour.toString(16).padStart(6, '0');
+    ctx.font = 'bold 64px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 64);
+    const tex = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    sprite.scale.set(1.2, 0.6, 1);
+    return sprite;
   }
 
   function addAxles(truck, w, h) {
@@ -122,13 +147,25 @@ export function createViewer(container) {
       new THREE.EdgesGeometry(geo),
       new THREE.LineBasicMaterial({ color: 0x000000 }),
     );
+    // Red corner dots, hidden unless the box is in a bad spot. Keeps the case's
+    // own colour visible while still flagging a violation.
+    const hx = size[0] * MM / 2, hy = size[2] * MM / 2, hz = size[1] * MM / 2;
+    const corners = [];
+    for (const sx of [-hx, hx]) for (const sy of [-hy, hy]) for (const sz of [-hz, hz]) corners.push(sx, sy, sz);
+    const dotGeo = new THREE.BufferGeometry();
+    dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(corners, 3));
+    const marker = new THREE.Points(dotGeo, new THREE.PointsMaterial({
+      color: 0xff0000, size: 0.12, sizeAttenuation: true,
+    }));
+    marker.visible = false;
+
     const group = new THREE.Group();
-    group.add(mesh, edges);
+    group.add(mesh, edges, marker);
     group.position.copy(centreOf(placement.pos, size));
     contentGroup.add(group);
 
     const entry = {
-      instanceId: placement.instanceId, caseId: placement.caseId, group, mesh,
+      instanceId: placement.instanceId, caseId: placement.caseId, group, mesh, marker,
       pos: [...placement.pos], size: [...size], up: placement.up,
     };
     mesh.userData.entry = entry;
@@ -156,7 +193,9 @@ export function createViewer(container) {
       ...(ev.unsupported || []), ...(ev.illegalStacks || []), ...(ev.overloaded || []),
     ]);
     for (const e of entries) {
-      e.mesh.material.color.setHex(bad.has(e.instanceId) ? BAD : colourFor(e.caseId));
+      // Keep the case's own colour; flag a bad spot with red corner dots so the
+      // case stays identifiable.
+      e.marker.visible = bad.has(e.instanceId);
     }
   }
 

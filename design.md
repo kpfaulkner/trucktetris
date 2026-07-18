@@ -68,6 +68,9 @@ any cases that did not fit.
   type — e.g. the cable and lighting trunks — came out identical; switched to per-case.) The same
   colour map is shared with the selection-list swatches for consistency.
 - Truck container as wireframe / semi-transparent walls.
+- **FRONT** (green, x=0, cab/kingpin end) and **BACK** (red, x=L, doors) labels on the floor —
+  camera-facing text sprites from a canvas texture — so the truck's orientation is unambiguous
+  (x runs front→back, matching the axle positions).
 - `OrbitControls`: orbit / pan / zoom.
 - Loads `LoadPlan` JSON from `/api/solve`.
 - Overlay panel: total weight, count placed / unplaced.
@@ -207,8 +210,10 @@ Editor (`static/viewer.js`, `static/app.js`):
   bounds" = not loaded) and clears once dragged back in.
 - On drag (throttled to one in-flight request; a drag that lands mid-request re-runs once it
   returns) the client calls `/api/evaluate` and updates live: total weight (⚠ over gross),
-  per-axle loads, and a `✓ valid` / `⚠ …` violations line. Colliding / out-of-bounds boxes are
-  recoloured **red** in the view.
+  per-axle loads, and a `✓ valid` / `⚠ …` violations line. A box in a bad spot (collision,
+  out-of-bounds, unsupported, illegal stack, or bearing overload) is flagged with **red corner
+  dots** — the case keeps its own colour so its type stays identifiable (an earlier version
+  filled the whole box red, which lost the colour coding).
 - **Solve & render** re-runs the solver and discards manual edits (the solver output overrides).
 
 **Done when:** user drags a case to a new valid spot, sees updated axle/weight readouts, and
@@ -293,7 +298,7 @@ editing.
 - Should PDF contain 2D imagery showing the layout?
 
 ### M10 — Disclaimer
-- Need to have disclaimer saying the layout is just a suggestion and is not 
+- Need to have disclaimer in PDF saying the layout is just a suggestion and is not 
   professional advice on how to load a truck.
 
 ### Notes
