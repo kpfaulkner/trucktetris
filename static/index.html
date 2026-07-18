@@ -6,42 +6,121 @@
   <title>Truck Tetris</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
-    #app { display: flex; height: 100%; }
-    #view { flex: 1; position: relative; background: #1a1d21; }
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color: #1a1d21; }
+    #root { display: flex; flex-direction: column; height: 100%; }
+    header { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid #ddd; }
+    header h1 { font-size: 1.1rem; margin: 0; }
+    .tab { padding: 0.4rem 0.9rem; border: 1px solid #ccc; background: #f4f4f4; cursor: pointer; border-radius: 6px; }
+    .tab.active { background: #4e79a7; color: #fff; border-color: #4e79a7; }
+    #error { color: #b00; margin-left: auto; font-size: 0.9rem; }
+
+    .page { display: none; flex: 1; min-height: 0; }
+    .page.active { display: flex; }
+
+    /* Manage page */
+    #page-manage { flex-direction: column; overflow-y: auto; padding: 1rem; gap: 2rem; }
+    section h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 0.8rem; }
+    th, td { border: 1px solid #e0e0e0; padding: 0.35rem 0.5rem; text-align: left; font-size: 0.9rem; }
+    th { background: #f7f7f7; }
+    form.entry { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; }
+    form.entry label { display: flex; flex-direction: column; font-size: 0.75rem; color: #555; gap: 0.15rem; }
+    form.entry input[type=text], form.entry input[type=number] { width: 6rem; padding: 0.3rem; }
+    form.entry input.wide { width: 12rem; }
+    fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 0.3rem 0.6rem; }
+    button { padding: 0.4rem 0.9rem; cursor: pointer; border-radius: 6px; border: 1px solid #4e79a7; background: #4e79a7; color: #fff; }
+    button.small { padding: 0.15rem 0.5rem; font-size: 0.8rem; background: #b00; border-color: #b00; }
+
+    /* Plan page */
+    #page-plan { flex-direction: row; }
+    #view { flex: 1; background: #1a1d21; position: relative; }
     #view canvas { display: block; }
-    #panel {
-      width: 20rem; padding: 1rem; overflow-y: auto;
-      border-left: 1px solid #ddd; background: #fafafa;
-    }
-    h1 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+    #plan-panel { width: 22rem; padding: 1rem; overflow-y: auto; border-left: 1px solid #ddd; background: #fafafa; }
     .stat { display: flex; justify-content: space-between; padding: 0.2rem 0; }
     .stat b { font-variant-numeric: tabular-nums; }
-    #legend { margin-top: 1rem; }
-    .legend-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
-    .swatch { width: 1rem; height: 1rem; border-radius: 3px; border: 1px solid #0003; }
-    #unplaced { margin-top: 1rem; color: #b00; font-size: 0.9rem; }
-    button { padding: 0.5rem 1rem; font-size: 0.95rem; cursor: pointer; width: 100%; margin-bottom: 0.5rem; }
+    #sel-cases { margin: 0.5rem 0; max-height: 40vh; overflow-y: auto; }
+    .sel-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
+    .swatch { width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid #0003; display: inline-block; }
+    #stat-unfit { color: #b00; font-size: 0.9rem; margin-top: 0.5rem; }
+    #solve { width: 100%; margin: 0.5rem 0; }
+    select { width: 100%; padding: 0.4rem; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <div id="view"></div>
-    <div id="panel">
+  <div id="root">
+    <header>
       <h1>Truck Tetris</h1>
-      <button id="reload">Reload &amp; solve</button>
-      <div class="stat"><span>Truck</span><b id="truck-name">—</b></div>
-      <div class="stat"><span>Placed</span><b id="placed">—</b></div>
-      <div class="stat"><span>Unplaced</span><b id="unplaced-count">—</b></div>
-      <div class="stat"><span>Total weight</span><b id="weight">—</b></div>
-      <div id="legend"></div>
-      <div id="unplaced"></div>
+      <button class="tab active" data-page="plan">Plan &amp; view</button>
+      <button class="tab" data-page="manage">Manage data</button>
+      <span id="error"></span>
+    </header>
+
+    <!-- Plan page -->
+    <div id="page-plan" class="page active">
+      <div id="view"></div>
+      <div id="plan-panel">
+        <h2>Build a load</h2>
+        <label for="sel-truck">Truck</label>
+        <select id="sel-truck"></select>
+        <div id="sel-cases"></div>
+        <button id="solve">Solve &amp; render</button>
+        <hr>
+        <div class="stat"><span>Truck</span><b id="stat-truck">—</b></div>
+        <div class="stat"><span>Placed</span><b id="stat-placed">—</b></div>
+        <div class="stat"><span>Unplaced</span><b id="stat-unplaced">—</b></div>
+        <div class="stat"><span>Total weight</span><b id="stat-weight">—</b></div>
+        <div id="stat-unfit"></div>
+      </div>
+    </div>
+
+    <!-- Manage page -->
+    <div id="page-manage" class="page">
+      <section>
+        <h2>Road cases</h2>
+        <table>
+          <thead><tr><th>Name</th><th>L×W×H (mm)</th><th>Weight</th><th>Type</th><th>Orient.</th><th></th></tr></thead>
+          <tbody id="case-rows"></tbody>
+        </table>
+        <form id="case-form" class="entry">
+          <label>Name<input id="c-name" type="text" required></label>
+          <label>Type<input id="c-type" type="text" placeholder="rack"></label>
+          <label>L<input id="c-l" type="number" min="1" required></label>
+          <label>W<input id="c-w" type="number" min="1" required></label>
+          <label>H<input id="c-h" type="number" min="1" required></label>
+          <label>Weight<input id="c-weight" type="number" min="1" required></label>
+          <label class="wide">Stackable on (types, comma)<input id="c-stack" type="text" class="wide" placeholder="rack, trunk"></label>
+          <fieldset>
+            <legend>Orientations</legend>
+            <label><input id="c-axis-H" type="checkbox" checked> H upright</label>
+            <label><input id="c-axis-W" type="checkbox"> W on side</label>
+            <label><input id="c-axis-L" type="checkbox"> L on end</label>
+          </fieldset>
+          <button type="submit">Add case</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Trucks / trailers</h2>
+        <table>
+          <thead><tr><th>Name</th><th>L×W×H (mm)</th><th>Gross max</th><th>Axles (pos/load)</th><th></th></tr></thead>
+          <tbody id="truck-rows"></tbody>
+        </table>
+        <form id="truck-form" class="entry">
+          <label>Name<input id="t-name" type="text" required></label>
+          <label>L<input id="t-l" type="number" min="1" required></label>
+          <label>W<input id="t-w" type="number" min="1" required></label>
+          <label>H<input id="t-h" type="number" min="1" required></label>
+          <label>Gross max<input id="t-gross" type="number" min="1" required></label>
+          <label class="wide">Axles (pos:load, comma)<input id="t-axles" type="text" class="wide" placeholder="1200:6000, 6000:10000"></label>
+          <button type="submit">Add truck</button>
+        </form>
+      </section>
     </div>
   </div>
 
   <script type="importmap">
     { "imports": { "three": "/vendor/three.module.js" } }
   </script>
-  <script type="module" src="/viewer.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

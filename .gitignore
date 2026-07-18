@@ -33,3 +33,7 @@ go.work.sum
 
 # build artifacts
 bin/
+
+# local database
+*.db
+trucktetris.db

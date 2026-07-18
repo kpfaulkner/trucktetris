@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/kenfaulkner/trucktetris/internal/server"
+	"github.com/kenfaulkner/trucktetris/internal/store"
 )
 
 //go:embed static
@@ -19,6 +20,10 @@ func main() {
 	if addr == "" {
 		addr = ":8081"
 	}
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "trucktetris.db"
+	}
 
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -26,7 +31,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	handler := server.New(staticFS)
+	st, err := store.Open(dbPath)
+	if err != nil {
+		slog.Error("open store", "err", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	handler := server.New(staticFS, st)
 
 	slog.Info("listening", "addr", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
