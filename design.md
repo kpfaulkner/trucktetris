@@ -292,14 +292,85 @@ editing.
 
 **Done when:** a plan can be saved, reloaded, and exported for use by loaders. ✅
 
-### M9 - paperwork
-- Determine how PDF should look that would describe the loadout in a meaningful way.
-  Should it be listing the types in the order they should be loaded?
-- Should PDF contain 2D imagery showing the layout?
+### M9 — Loading paperwork
+**Goal:** Turn a plan into paperwork a loader can follow at the truck, without reading raw
+coordinates. The plan already knows *where* everything goes; the sheet must explain *how to load
+it* in human terms.
+
+**Delivery:** a print-friendly **HTML "loading sheet"** (opens in the browser, Save-as-PDF /
+print). SVG diagrams print crisply and need no PDF library — matches the existing stack. Can be
+swapped for a generated PDF later if required.
+
+**Coordinate → human translation** (the key idea — loaders think in order, zones, tiers, and
+"what sits on what", never in mm):
+
+- **Along length** → metres from the front **plus a zone word**: Front / Middle / Rear (length
+  split in thirds).
+- **Across width** → **Left / Centre / Right** (thirds), with the reference stated explicitly:
+  *viewed from the rear doors looking toward the cab*.
+- **Height** → **Tier** number (Tier 1 = floor, Tier 2 = on top, …) plus an explicit
+  **"rests on"**: the floor, or the step number + case it sits on.
+- **Orientation** → words, not axes: Upright / On side / On end.
+
+**Loading sequence (the spine of the sheet).** A numbered, ordered step list — this is what makes
+the plan physically loadable. Order = **floor tier first, then front → back, then upward**, so a
+base is always placed before anything stacked on it and the front is filled before the rear
+blocks access (rear-door loading). Each step row:
+
+| Step | Case (n of m if duplicated) | Zone + m from front | Side | Tier / rests on | Orientation | Weight |
+
+**2D diagrams** (more useful on paper than the 3D view; SVG):
+
+- **Top-down plan** — truck outline with FRONT/BACK marked, each footprint drawn to scale,
+  labelled with its step number and case colour. Shows the left/right + front/back layout at a
+  glance.
+- **Side elevation** — view along the length showing tiers / stacking heights, step-numbered, so
+  "what is stacked on what" is obvious.
+
+**Compliance summary box** (what a loader/driver signs off on): total weight vs `grossMax` (with
+%), **per-axle load vs limit with PASS / OVER**, case count placed, any unplaced cases called
+out, and volume/weight utilisation.
+
+**Notes / warnings:** heavy-over-axle reminder, upright-only / fragile cases flagged, and any
+live violations (overload, unsupported, illegal stack) surfaced prominently.
+
+**Foot:** the M10 disclaimer (suggestion only, not professional load advice).
+
+**Done when:** from a solved or hand-edited plan, the user prints a sheet whose numbered sequence
++ diagrams let someone load the truck correctly without opening the app.
 
 ### M10 — Disclaimer
-- Need to have disclaimer in PDF saying the layout is just a suggestion and is not 
-  professional advice on how to load a truck.
+**Goal:** Make clear the tool gives a *suggestion*, not certified load advice — protects the
+user and sets honest expectations, since real loading involves restraint, load rating, road
+rules, and judgement the tool does not model.
+
+Where it appears:
+
+- **Loading sheet (M9)** — a disclaimer block at the foot of every printed/exported sheet, so it
+  travels with the paperwork that reaches the loader.
+- **App** — a short line in the plan panel / near the export button, and once on first use (or in
+  an "About") so it is seen in-app too.
+
+Wording (plain, non-legalese; final text is the user's call — placeholder):
+
+> This load plan is a computer-generated **suggestion** based on the dimensions, weights, and
+> rules entered. It is **not** professional advice on how to load or restrain a vehicle. It does
+> not account for load restraint/tie-downs, axle-group and road-legal mass limits, dangerous
+> goods, vehicle-specific limits, or site rules. The operator is responsible for verifying the
+> load is safe and legal before transport.
+
+What it should reference (so it is not hand-wavy):
+
+- Restraint / securing is **not** modelled (the tool only checks geometry, stacking, bearing,
+  gross + per-axle mass via a simplified lever-rule estimate).
+- Axle loads are an **estimate**, not a certified weighbridge figure.
+- Compliance with local road/transport regulations remains the operator's responsibility.
+
+Implementation: keep the text in one place (a constant / small template) reused by the sheet and
+the in-app notice, so it stays consistent and is easy to update.
+
+**Done when:** the disclaimer appears on every exported/printed loading sheet and is visible in
+the app, sourced from a single shared string.
 
 ### Notes
 - M1–M3 = walking skeleton on hardcoded data; value early, proves the full stack.
