@@ -8,15 +8,22 @@ import (
 	"net/http"
 
 	"github.com/kenfaulkner/trucktetris/internal/domain"
+	"github.com/kenfaulkner/trucktetris/internal/packer"
 )
+
+type api struct {
+	packer packer.Packer
+}
 
 // New builds the HTTP handler. staticFS serves the frontend assets.
 func New(staticFS fs.FS) http.Handler {
+	a := &api{packer: packer.Shelf{}}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", handleHealth)
 	mux.HandleFunc("GET /api/sample", handleSample)
-	mux.HandleFunc("POST /api/solve", handleSolve)
+	mux.HandleFunc("POST /api/solve", a.handleSolve)
 
 	mux.Handle("GET /", http.FileServerFS(staticFS))
 
@@ -36,29 +43,14 @@ func handleSample(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// handleSolve is a stub for M1: it echoes the request back as a trivial
-// LoadPlan with everything unplaced. The real packer arrives in M2.
-func handleSolve(w http.ResponseWriter, r *http.Request) {
+// handleSolve runs the packer over the request and returns the load plan.
+func (a *api) handleSolve(w http.ResponseWriter, r *http.Request) {
 	var req domain.SolveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-
-	unplaced := make([]string, len(req.Cases))
-	for i, c := range req.Cases {
-		unplaced[i] = c.ID
-	}
-
-	plan := domain.LoadPlan{
-		Truck:      req.Truck,
-		Placements: []domain.Placement{},
-		Unplaced:   unplaced,
-		Summary: domain.Summary{
-			UnplacedCount: len(unplaced),
-		},
-	}
-	writeJSON(w, http.StatusOK, plan)
+	writeJSON(w, http.StatusOK, a.packer.Pack(req))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
