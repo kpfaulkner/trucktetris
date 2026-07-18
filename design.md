@@ -292,10 +292,22 @@ editing.
 
 **Done when:** a plan can be saved, reloaded, and exported for use by loaders. ✅
 
-### M9 — Loading paperwork
+### M9 — Loading paperwork  ✅ implemented
 **Goal:** Turn a plan into paperwork a loader can follow at the truck, without reading raw
 coordinates. The plan already knows *where* everything goes; the sheet must explain *how to load
 it* in human terms.
+
+**Implementation:** `static/sheet.js` — `buildLoadingSheet({truck, placements, caseById,
+evaluation})` returns a complete print-ready HTML document, opened in a new window from the
+"Loading sheet (print / PDF)" button (the client POSTs the current placements to `/api/evaluate`
+first for the compliance figures). Delivered exactly as designed below: numbered loading sequence
+(floor → front → back), coordinate→human translation (zone + m-from-front, Left/Centre/Right from
+the rear-door view, Tier + "rests on floor / on #N case", orientation words), duplicate ordinals
+"(2 of 3)", top-down and side-elevation SVG diagrams (step-numbered, FRONT/BACK marked, colours
+shared with the 3D viewer via `colourFor`), and the compliance summary (weight vs gross %,
+per-axle PASS/OVER, cases loaded, not-loaded list, rule violations). Only in-truck cases appear in
+the sequence and diagrams; anything outside the load space is listed as not loaded. The M10
+disclaimer sits at the foot, exported as a shared `DISCLAIMER` constant.
 
 **Delivery:** a print-friendly **HTML "loading sheet"** (opens in the browser, Save-as-PDF /
 print). SVG diagrams print crisply and need no PDF library — matches the existing stack. Can be
@@ -339,10 +351,15 @@ live violations (overload, unsupported, illegal stack) surfaced prominently.
 **Done when:** from a solved or hand-edited plan, the user prints a sheet whose numbered sequence
 + diagrams let someone load the truck correctly without opening the app.
 
-### M10 — Disclaimer
+### M10 — Disclaimer  ✅ implemented
 **Goal:** Make clear the tool gives a *suggestion*, not certified load advice — protects the
 user and sets honest expectations, since real loading involves restraint, load rating, road
 rules, and judgement the tool does not model.
+
+**Implementation:** a single shared `DISCLAIMER` constant in `static/sheet.js` is the one source
+of truth. It appears (1) at the foot of every generated loading sheet (M9), and (2) in-app as a
+muted block at the foot of the plan panel, set on boot from the same constant. Editing the
+constant updates both. Current text is the placeholder wording below; swap it when finalised.
 
 Where it appears:
 

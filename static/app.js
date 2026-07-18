@@ -1,5 +1,6 @@
 // App orchestration: tab switching, CRUD forms, selection, and solving.
 import { createViewer, colourFor } from '/viewer.js';
+import { buildLoadingSheet, DISCLAIMER } from '/sheet.js';
 
 // --- tiny helpers ------------------------------------------------------------
 
@@ -576,10 +577,28 @@ function csvCell(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// Open a print-friendly loading sheet in a new window, using the current
+// placements and a fresh server evaluation for the compliance figures.
+async function printLoadingSheet() {
+  setError('');
+  if (!planTruck) { setError('Solve or build a plan first'); return; }
+  const placements = clonePlacements();
+  if (!placements.length) { setError('Nothing to print'); return; }
+  try {
+    const evaluation = await api('POST', '/api/evaluate', { truckId: planTruckId, placements });
+    const html = buildLoadingSheet({ truck: planTruck, placements, caseById: planCaseById, evaluation });
+    const win = window.open('', '_blank');
+    if (!win) { setError('Pop-up blocked — allow pop-ups to open the loading sheet'); return; }
+    win.document.write(html);
+    win.document.close();
+  } catch (err) { setError(err.message); }
+}
+
 // --- boot --------------------------------------------------------------------
 
 async function boot() {
   initTabs();
+  $('#disclaimer').textContent = `Disclaimer: ${DISCLAIMER}`;
   viewer = createViewer($('#view'));
   $('#case-form').addEventListener('submit', submitCase);
   $('#case-cancel').addEventListener('click', resetCaseForm);
@@ -588,6 +607,7 @@ async function boot() {
   $('#solve').addEventListener('click', solve);
   $('#sel-truck').addEventListener('change', () => syncStaging({ keepCamera: false }));
   $('#save-plan').addEventListener('click', savePlan);
+  $('#loading-sheet').addEventListener('click', printLoadingSheet);
   $('#export-csv').addEventListener('click', exportCsv);
   try {
     await refreshData();

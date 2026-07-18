@@ -55,6 +55,8 @@
     .plan-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0; font-size: 0.9rem; }
     .plan-row .pname { flex: 1; }
     .plan-row .pdate { color: #999; font-size: 0.8em; }
+    .disclaimer { margin-top: 1rem; padding: 0.5rem 0.6rem; border: 1px solid #d0a0a0;
+      border-radius: 6px; background: #fff6f6; color: #7a0000; font-size: 0.72rem; line-height: 1.35; }
     #stat-unfit { color: #b00; font-size: 0.9rem; margin-top: 0.5rem; }
     #solve { width: 100%; margin: 0.5rem 0; }
     select { width: 100%; padding: 0.4rem; }
@@ -95,8 +97,11 @@
           <input id="plan-name" type="text" placeholder="Plan name">
           <button id="save-plan">Save</button>
         </div>
-        <button id="export-csv" class="ghost" style="width:100%;margin:0.4rem 0;">Export CSV</button>
+        <button id="loading-sheet" style="width:100%;margin:0.4rem 0;">Loading sheet (print / PDF)</button>
+        <button id="export-csv" class="ghost" style="width:100%;margin:0 0 0.4rem;">Export CSV</button>
         <div id="plan-list"></div>
+
+        <div id="disclaimer" class="disclaimer"></div>
       </div>
     </div>
 
