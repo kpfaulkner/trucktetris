@@ -42,6 +42,7 @@ func New(staticFS fs.FS, st *store.Store) http.Handler {
 	mux.HandleFunc("DELETE /api/trucks/{id}", a.deleteTruck)
 
 	mux.HandleFunc("POST /api/solve", a.solve)
+	mux.HandleFunc("POST /api/evaluate", a.evaluate)
 
 	mux.Handle("GET /", http.FileServerFS(staticFS))
 
@@ -193,6 +194,39 @@ func (a *api) solve(w http.ResponseWriter, r *http.Request) {
 	}
 	plan := a.packer.Pack(domain.SolveRequest{Truck: truck, Cases: cases})
 	writeJSON(w, http.StatusOK, plan)
+}
+
+// evalRequest carries a truck and an arbitrary (e.g. manually edited) set of
+// placements to check against the truck's limits and geometry.
+type evalRequest struct {
+	TruckID    string             `json:"truckId"`
+	Placements []domain.Placement `json:"placements"`
+}
+
+func (a *api) evaluate(w http.ResponseWriter, r *http.Request) {
+	var req evalRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	truck, err := a.store.GetTruck(req.TruckID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	// Look up each referenced case (cached per id) for weight + stacking rules.
+	cases := map[string]domain.Case{}
+	for _, p := range req.Placements {
+		if _, ok := cases[p.CaseID]; ok {
+			continue
+		}
+		c, err := a.store.GetCase(p.CaseID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		cases[p.CaseID] = c
+	}
+	writeJSON(w, http.StatusOK, domain.EvaluatePlan(truck, req.Placements, cases))
 }
 
 // --- helpers -----------------------------------------------------------------

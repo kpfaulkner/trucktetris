@@ -159,16 +159,42 @@ weight, not relative heaviness. `Truck.HeavyThreshold` (kg); a case is biased ov
 when its weight ≥ the threshold (and the threshold > 0). Lighter cases ignore the bias and pack
 for density. Per-axle max load is still enforced for every case. Threshold 0 disables the bias.
 
-### M7 — Manual repositioning
+### M7 — Manual repositioning  ✅ implemented
 **Goal:** Human override in 3D.
 
-- Raycaster picks a box; drag to reposition (raycast onto floor/axis plane).
-- Snap to grid; live AABB collision feedback (highlight red on overlap).
-- Live recompute of weight + axle loads (reuse M5/M6 logic) with violation flags.
-- Manual placements persist and override the solver for that plan.
+Evaluation stays in Go and is reused by the editor (`domain.EvaluatePlan`, `POST /api/evaluate`):
+
+- Request `{truckId, placements}`; the server looks up each case's weight from the store, then
+  returns `Evaluation{axleLoads, totalWeight, overGross, collisions[], outOfBounds[]}`.
+- Reuses the M6 axle-load model; AABB overlap check (touching faces do **not** count) and a
+  bounds check against the load space. Keeps all rules server-side — the browser only renders
+  feedback.
+
+Editor (`static/viewer.js`, `static/app.js`):
+
+- Each case is a Three.js `Group` (mesh + edge outline). A raycaster picks the box under the
+  cursor.
+- Drag slides the box on a **horizontal plane at its current height** (length × width). Orbit
+  controls are disabled mid-drag.
+- Position **snaps to a 50 mm grid** and is **clamped** to the truck bounds.
+- On drag (throttled to one in-flight request; a drag that lands mid-request re-runs once it
+  returns) the client calls `/api/evaluate` and updates live: total weight (⚠ over gross),
+  per-axle loads, and a `✓ valid` / `⚠ …` violations line. Colliding / out-of-bounds boxes are
+  recoloured **red** in the view.
+- **Solve & render** re-runs the solver and discards manual edits (the solver output overrides).
 
 **Done when:** user drags a case to a new valid spot, sees updated axle/weight readouts, and
-overlaps/violations are flagged.
+overlaps/violations are flagged. ✅
+
+Vertical stacking by drag: while dragging, the box **auto-rests** on whatever is under its
+footprint — the highest overlapping box top, or the floor if none. Dragging a box over another
+lifts it on top; dragging it back to clear floor drops it down. No separate vertical control is
+needed. (A drag that leaves a box overhanging or interpenetrating is flagged red by the
+evaluation, same as any other violation.)
+
+**Scope notes:**
+- Manual placements persist **in-session** (client state; survive tab switches, cleared on
+  re-solve). Saving an edited plan to the database is deferred to M8.
 
 ### M8 — Polish
 **Goal:** Usable product.

@@ -30,6 +30,8 @@
     fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 0.3rem 0.6rem; }
     button { padding: 0.4rem 0.9rem; cursor: pointer; border-radius: 6px; border: 1px solid #4e79a7; background: #4e79a7; color: #fff; }
     button.small { padding: 0.15rem 0.5rem; font-size: 0.8rem; background: #b00; border-color: #b00; }
+    button.edit { background: #4e79a7; border-color: #4e79a7; margin-right: 0.3rem; }
+    button.ghost { background: #fff; color: #555; border-color: #bbb; }
 
     /* Plan page */
     #page-plan { flex-direction: row; }
@@ -41,9 +43,11 @@
     #sel-cases { margin: 0.5rem 0; max-height: 40vh; overflow-y: auto; }
     .sel-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
     .swatch { width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid #0003; display: inline-block; }
+    .sel-meta { color: #777; font-size: 0.85em; }
     #stat-axles { margin-top: 0.6rem; }
     #stat-axles .axle { display: flex; justify-content: space-between; padding: 0.15rem 0; font-size: 0.9rem; }
     #stat-axles .axle.over { color: #b00; font-weight: 600; }
+    #stat-violations { margin-top: 0.5rem; font-size: 0.9rem; font-weight: 600; }
     #stat-unfit { color: #b00; font-size: 0.9rem; margin-top: 0.5rem; }
     #solve { width: 100%; margin: 0.5rem 0; }
     select { width: 100%; padding: 0.4rem; }
@@ -73,6 +77,7 @@
         <div class="stat"><span>Unplaced</span><b id="stat-unplaced">—</b></div>
         <div class="stat"><span>Total weight</span><b id="stat-weight">—</b></div>
         <div id="stat-axles"></div>
+        <div id="stat-violations"></div>
         <div id="stat-unfit"></div>
       </div>
     </div>
@@ -99,7 +104,8 @@
             <label><input id="c-stackable" type="checkbox"> Stackable (bears load on top)</label>
             <label><input id="c-side" type="checkbox"> Can lie on side</label>
           </fieldset>
-          <button type="submit">Add case</button>
+          <button type="submit" id="case-submit">Add case</button>
+          <button type="button" id="case-cancel" class="ghost" hidden>Cancel</button>
         </form>
       </section>
 
