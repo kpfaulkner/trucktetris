@@ -147,8 +147,10 @@ func (s *Store) seedIfEmpty() error {
 			return fmt.Errorf("seed case: %w", err)
 		}
 	}
-	if err := s.SaveTruck(domain.SampleTruck()); err != nil {
-		return fmt.Errorf("seed truck: %w", err)
+	for _, tk := range domain.SampleTrucks() {
+		if err := s.SaveTruck(tk); err != nil {
+			return fmt.Errorf("seed truck: %w", err)
+		}
 	}
 	return nil
 }

@@ -84,6 +84,22 @@ Go → JSON → render proven.
 - Validation: positive dims/weights, axle positions within truck length.
 - Selection screen: pick a truck + subset of cases, send to solver.
 
+Inline editing (both tables): an **Edit** button per row loads that record into its form, which
+switches to update mode (submit becomes "Save changes", a Cancel button appears) and PUTs to
+`/api/{cases,trucks}/{id}`; deleting the record currently being edited resets the form. Cases
+gained this alongside M7; trucks/trailers have the same edit flow. Server-side validation still
+applies (e.g. an axle beyond the truck length is rejected with 400).
+
+Seeded trucks (placeholders for an empty DB; real data is set by the operator via the UI —
+see the case-data-authority note):
+
+- `Sample 12t rigid` — 7.2 × 2.4 × 2.4 m, two axles.
+- `Semi-trailer (tautliner, 13.6m)` — standard tautliner load space **13.6 × 2.4 × 2.7 m**,
+  ~24 t payload. Axles measured from the front of the load space (kingpin end): prime-mover
+  drive group @1600 mm (max 15 t), trailer tri-axle group @10500 mm (max 20 t). `heavyThreshold`
+  left at 0 for the operator to set. Added to already-seeded databases via the trucks API (seed
+  only runs on an empty DB).
+
 **Done when:** user creates cases + a truck in the UI, selects them, and M2 solver runs on that
 data with no code edits.
 
@@ -185,7 +201,10 @@ Editor (`static/viewer.js`, `static/app.js`):
   cursor.
 - Drag slides the box on a **horizontal plane at its current height** (length × width). Orbit
   controls are disabled mid-drag.
-- Position **snaps to a 50 mm grid** and is **clamped** to the truck bounds.
+- Position **snaps to a 50 mm grid**. It is **not** clamped to the truck: a box can be dragged
+  out of the load space (into the staging area or off to the side) to shuffle things around; the
+  only limit is no negative coordinates. A box parked outside the truck flags red ("out of
+  bounds" = not loaded) and clears once dragged back in.
 - On drag (throttled to one in-flight request; a drag that lands mid-request re-runs once it
   returns) the client calls `/api/evaluate` and updates live: total weight (⚠ over gross),
   per-axle loads, and a `✓ valid` / `⚠ …` violations line. Colliding / out-of-bounds boxes are
@@ -211,6 +230,22 @@ Quantity + placement identity:
 - Everything that acts on an individual box — collision/violation flagging, drag selection,
   recolouring, CSV rows — keys off `instanceId`, so dragging or flagging one copy never affects
   its identical twin.
+
+Live staging (hand-loading workflow):
+
+- Changing a case's quantity **instantly** adds/removes boxes in the 3D view. New instances appear
+  **staged beside the truck** — laid out in a non-overlapping field along the truck length,
+  wrapping outward in width — so the user can drag each into the load space by hand instead of
+  running the solver.
+- Staged boxes sit outside the load space, so they read as red "out of bounds" until dragged in
+  (i.e. "not loaded yet"). Dragging one in un-stages it; the live evaluation updates.
+- Already-positioned boxes keep their place when quantities change; lowering a quantity removes
+  the surplus, raising it adds more staged boxes. Switching trucks re-stages beside the new truck.
+- Unified client state: a single `manualPlacements` list plus a `stagedSet` of not-yet-placed
+  instance IDs is the source of truth for the view, evaluation, save, and export. **Solve &
+  render** repacks everything (clearing staging); **Load** restores a saved plan (all positioned).
+- Viewer support: a `keepCamera` option avoids resetting the camera on incremental staging, and
+  the camera frames all content (truck + staging area), not just the truck.
 
 **Scope notes:**
 - Manual placements persist **in-session** (client state; survive tab switches, cleared on

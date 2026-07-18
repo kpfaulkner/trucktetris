@@ -16,6 +16,29 @@ func SampleTruck() Truck {
 	}
 }
 
+// StandardSemiTrailer returns a typical tautliner semi-trailer load space:
+// ~13.6 m x 2.4 m x 2.7 m internal, ~24 t payload. Axle positions are measured
+// from the front of the load space (kingpin end): the prime mover's drive-axle
+// group sits near the front, the trailer's tri-axle group near the rear.
+func StandardSemiTrailer() Truck {
+	return Truck{
+		ID:   "truck-semi-tautliner",
+		Name: "Semi-trailer (tautliner, 13.6m)",
+		Dim:  Dimensions{L: 13600, W: 2400, H: 2700},
+		Axles: []Axle{
+			{Position: 1600, MaxLoad: 15000},  // prime mover drive-axle group
+			{Position: 10500, MaxLoad: 20000}, // trailer tri-axle group
+		},
+		GrossMax:       24000,
+		HeavyThreshold: 0, // let the operator decide via the Manage UI
+	}
+}
+
+// SampleTrucks returns the trucks seeded into an empty database.
+func SampleTrucks() []Truck {
+	return []Truck{SampleTruck(), StandardSemiTrailer()}
+}
+
 // SampleCases returns a hardcoded set of road cases for testing.
 func SampleCases() []Case {
 	return []Case{

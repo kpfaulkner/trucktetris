@@ -160,15 +160,27 @@ export function createViewer(container) {
     }
   }
 
+  // contentBounds covers the truck plus any placements outside it (staging), so
+  // the camera can frame everything.
+  function contentBounds(plan) {
+    let l = plan.truck.dim.l, w = plan.truck.dim.w, h = plan.truck.dim.h;
+    for (const p of plan.placements) {
+      l = Math.max(l, p.pos[0] + p.size[0]);
+      w = Math.max(w, p.pos[1] + p.size[1]);
+      h = Math.max(h, p.pos[2] + p.size[2]);
+    }
+    return { l: l * MM, w: w * MM, h: h * MM };
+  }
+
   function render(plan, caseById, opts = {}) {
     clearContent();
     truckDim = plan.truck.dim;
     onChange = opts.onChange || null;
-    const dims = addTruck(plan.truck);
+    addTruck(plan.truck);
     for (const p of plan.placements) {
       addCase(p);
     }
-    frameCamera(dims);
+    if (!opts.keepCamera) frameCamera(contentBounds(plan));
     resize();
   }
 
@@ -216,13 +228,11 @@ export function createViewer(container) {
     const cx = planeHit.x - drag.offsetX;
     const cz = planeHit.z - drag.offsetZ;
 
-    // three centre -> domain min-corner, snap, clamp to truck bounds.
-    let px = Math.round(cx / MM - entry.size[0] / 2);
-    let py = Math.round(cz / MM - entry.size[1] / 2);
-    px = clamp(snap(px), 0, truckDim.l - entry.size[0]);
-    py = clamp(snap(py), 0, truckDim.w - entry.size[1]);
-    entry.pos[0] = px;
-    entry.pos[1] = py;
+    // three centre -> domain min-corner, snapped to grid. Not clamped to the
+    // truck: boxes may be dragged outside the load space (staging / shuffling).
+    // Only the origin plane is a floor (no negative coordinates).
+    entry.pos[0] = Math.max(0, snap(Math.round(cx / MM - entry.size[0] / 2)));
+    entry.pos[1] = Math.max(0, snap(Math.round(cz / MM - entry.size[1] / 2)));
     // Rest on whatever is under this footprint: the highest overlapping box
     // top, or the floor. Dragging a box over another lifts it on top.
     entry.pos[2] = restingZ(entry);
@@ -267,4 +277,3 @@ export function createViewer(container) {
 }
 
 function snap(v) { return Math.round(v / SNAP) * SNAP; }
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }

@@ -66,8 +66,8 @@ func TestSeedPopulatesSamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(trucks) != 1 {
-		t.Fatalf("seeded %d trucks, want 1", len(trucks))
+	if len(trucks) != len(domain.SampleTrucks()) {
+		t.Fatalf("seeded %d trucks, want %d", len(trucks), len(domain.SampleTrucks()))
 	}
 }
 

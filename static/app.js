@@ -41,6 +41,11 @@ let planTruck = null;      // full truck object for the current plan
 let planCaseById = new Map();
 let planUnplaced = [];
 
+// Current placements shown in the view (staged + positioned), and the set of
+// instance IDs still sitting in the staging area (not yet placed by the user).
+let manualPlacements = [];
+let stagedSet = new Set();
+
 async function refreshData() {
   [cases, trucks] = await Promise.all([api('GET', '/api/cases'), api('GET', '/api/trucks')]);
   renderCaseTable();
@@ -161,14 +166,44 @@ function renderTruckTable() {
       el('td', { textContent: t.heavyThreshold || '—' }),
       el('td', { textContent: axles }),
     ]);
+    const edit = el('button', { textContent: 'Edit', className: 'small edit' });
+    edit.addEventListener('click', () => startEditTruck(t));
     const del = el('button', { textContent: 'Delete', className: 'small' });
     del.addEventListener('click', async () => {
-      try { await api('DELETE', `/api/trucks/${t.id}`); await refreshData(); }
-      catch (e) { setError(e.message); }
+      try {
+        await api('DELETE', `/api/trucks/${t.id}`);
+        if (editingTruckId === t.id) resetTruckForm();
+        await refreshData();
+      } catch (e) { setError(e.message); }
     });
-    row.append(el('td', {}, [del]));
+    row.append(el('td', {}, [edit, del]));
     tb.append(row);
   }
+}
+
+// --- truck edit state --------------------------------------------------------
+
+let editingTruckId = null;
+
+function startEditTruck(t) {
+  editingTruckId = t.id;
+  $('#t-name').value = t.name;
+  $('#t-l').value = t.dim.l;
+  $('#t-w').value = t.dim.w;
+  $('#t-h').value = t.dim.h;
+  $('#t-gross').value = t.grossMax;
+  $('#t-heavy').value = t.heavyThreshold || 0;
+  $('#t-axles').value = (t.axles || []).map((a) => `${a.position}:${a.maxLoad}`).join(', ');
+  $('#truck-submit').textContent = 'Save changes';
+  $('#truck-cancel').hidden = false;
+  $('#t-name').focus();
+}
+
+function resetTruckForm() {
+  editingTruckId = null;
+  $('#truck-form').reset();
+  $('#truck-submit').textContent = 'Add truck';
+  $('#truck-cancel').hidden = true;
 }
 
 // Parse "pos:load, pos:load" into an axle array.
@@ -179,18 +214,26 @@ function parseAxles(text) {
   });
 }
 
+function readTruckForm() {
+  return {
+    name: $('#t-name').value.trim(),
+    dim: { l: +$('#t-l').value, w: +$('#t-w').value, h: +$('#t-h').value },
+    grossMax: +$('#t-gross').value,
+    heavyThreshold: +$('#t-heavy').value,
+    axles: parseAxles($('#t-axles').value),
+  };
+}
+
 async function submitTruck(e) {
   e.preventDefault();
   setError('');
   try {
-    await api('POST', '/api/trucks', {
-      name: $('#t-name').value.trim(),
-      dim: { l: +$('#t-l').value, w: +$('#t-w').value, h: +$('#t-h').value },
-      grossMax: +$('#t-gross').value,
-      heavyThreshold: +$('#t-heavy').value,
-      axles: parseAxles($('#t-axles').value),
-    });
-    $('#truck-form').reset();
+    if (editingTruckId) {
+      await api('PUT', `/api/trucks/${editingTruckId}`, readTruckForm());
+    } else {
+      await api('POST', '/api/trucks', readTruckForm());
+    }
+    resetTruckForm();
     await refreshData();
   } catch (err) { setError(err.message); }
 }
@@ -207,6 +250,7 @@ function renderSelection() {
     const qty = el('input', { type: 'number', min: '0', value: '1', title: 'How many to load' });
     qty.className = 'sel-qty';
     qty.dataset.id = c.id;
+    qty.addEventListener('input', () => syncStaging());
     const hex = colourFor(c.id).toString(16).padStart(6, '0');
     const bears = c.stackable ? `bears ${c.maxStackWeight}kg` : 'no stacking';
     list.append(el('label', { className: 'sel-row' }, [
@@ -221,6 +265,88 @@ function renderSelection() {
       ]),
     ]));
   }
+}
+
+// selectedTruck reads the current truck dropdown selection.
+function selectedTruck() {
+  return trucks.find((t) => t.id === $('#sel-truck').value) || null;
+}
+
+function desiredCounts() {
+  const counts = {};
+  for (const q of document.querySelectorAll('.sel-qty')) {
+    counts[q.dataset.id] = Math.max(0, parseInt(q.value, 10) || 0);
+  }
+  return counts;
+}
+
+// layoutStaging places every still-staged instance in a field beside the truck
+// (along its length, wrapping outward in width), so nothing overlaps and the
+// user can grab and drag each into the load space.
+function layoutStaging(truck) {
+  const gap = 300;
+  let x = 0, rowY = truck.dim.w + 800, rowDepth = 0;
+  for (const p of manualPlacements) {
+    if (!stagedSet.has(p.instanceId)) continue;
+    if (x + p.size[0] > truck.dim.l && x > 0) {
+      x = 0; rowY += rowDepth + gap; rowDepth = 0;
+    }
+    p.pos = [x, rowY, 0];
+    x += p.size[0] + gap;
+    rowDepth = Math.max(rowDepth, p.size[1]);
+  }
+}
+
+// syncStaging reconciles manualPlacements with the quantity inputs: added
+// instances appear staged beside the truck; removed ones drop off; already
+// positioned instances keep their place. Called live as quantities change.
+function syncStaging({ keepCamera = true } = {}) {
+  setError('');
+  const truck = selectedTruck();
+  if (!truck) return;
+  planTruck = truck;
+  planTruckId = truck.id;
+  planCaseById = new Map(cases.map((c) => [c.id, c]));
+
+  const want = desiredCounts();
+  const byCase = {};
+  for (const p of manualPlacements) (byCase[p.caseId] ||= []).push(p);
+
+  const next = [];
+  for (const c of cases) {
+    const have = byCase[c.id] || [];
+    const n = want[c.id] || 0;
+    for (let i = 0; i < n; i++) {
+      if (i < have.length) {
+        next.push(have[i]); // keep existing (staged or positioned)
+      } else {
+        const id = `${c.id}#${i}`;
+        stagedSet.add(id);
+        next.push({ instanceId: id, caseId: c.id, pos: [0, 0, 0], size: [c.dim.l, c.dim.w, c.dim.h], up: 'H' });
+      }
+    }
+    // Drop instances beyond the wanted count.
+    for (let i = n; i < have.length; i++) stagedSet.delete(have[i].instanceId);
+  }
+  manualPlacements = next;
+
+  layoutStaging(truck);
+  renderManual({ keepCamera });
+  onPlacementsChanged(clonePlacements());
+}
+
+function clonePlacements() {
+  return manualPlacements.map((p) => ({
+    instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
+  }));
+}
+
+function renderManual({ keepCamera }) {
+  const plan = { truck: planTruck, placements: clonePlacements(), unplaced: [] };
+  viewer.render(plan, planCaseById, { onChange: onPlacementsChanged, keepCamera });
+  $('#stat-truck').textContent = planTruck.name;
+  $('#stat-placed').textContent = manualPlacements.length;
+  $('#stat-unplaced').textContent = 0;
 }
 
 async function solve() {
@@ -239,6 +365,11 @@ async function solve() {
     planTruck = plan.truck;
     planUnplaced = plan.unplaced || [];
     planCaseById = new Map(cases.map((c) => [c.id, c]));
+    // The solver positions everything, so nothing is left staged.
+    manualPlacements = (plan.placements || []).map((p) => ({
+      instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
+    }));
+    stagedSet = new Set();
     // Re-solving discards any manual edits and overrides with the solver result.
     viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
     renderPlanStats(plan, planCaseById);
@@ -251,6 +382,20 @@ let evalPending = false;
 let evalQueued = null;
 
 function onPlacementsChanged(placements) {
+  // Sync app state from the view: update positions and un-stage anything the
+  // user has dragged.
+  const byId = new Map(manualPlacements.map((p) => [p.instanceId, p]));
+  for (const pl of placements) {
+    const mp = byId.get(pl.instanceId);
+    if (!mp) continue;
+    if (mp.pos[0] !== pl.pos[0] || mp.pos[1] !== pl.pos[1] || mp.pos[2] !== pl.pos[2]) {
+      stagedSet.delete(pl.instanceId); // user moved it out of staging
+    }
+    mp.pos = [...pl.pos];
+    mp.size = [...pl.size];
+    mp.up = pl.up;
+  }
+
   if (evalPending) { evalQueued = placements; return; }
   evalPending = true;
   api('POST', '/api/evaluate', { truckId: planTruckId, placements })
@@ -363,6 +508,12 @@ async function loadPlan(id) {
       q.value = counts[q.dataset.id] || 0;
     }
 
+    // Loaded placements are all positioned (nothing staged).
+    manualPlacements = plan.placements.map((p) => ({
+      instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
+    }));
+    stagedSet = new Set();
+
     viewer.render(plan, planCaseById, { onChange: onPlacementsChanged });
     $('#stat-truck').textContent = truck.name;
     $('#stat-placed').textContent = plan.placements.length;
@@ -433,7 +584,9 @@ async function boot() {
   $('#case-form').addEventListener('submit', submitCase);
   $('#case-cancel').addEventListener('click', resetCaseForm);
   $('#truck-form').addEventListener('submit', submitTruck);
+  $('#truck-cancel').addEventListener('click', resetTruckForm);
   $('#solve').addEventListener('click', solve);
+  $('#sel-truck').addEventListener('change', () => syncStaging({ keepCamera: false }));
   $('#save-plan').addEventListener('click', savePlan);
   $('#export-csv').addEventListener('click', exportCsv);
   try {
