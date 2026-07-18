@@ -121,15 +121,46 @@ shows valid stacks. ✅
 **Not yet modelled:** max stack *height* as a separate per-case limit — currently bounded only by
 the truck's internal height. Revisit if real cases need a tighter cap.
 
-### M6 — Axle constraints
+### M6 — Axle constraints  ✅ implemented
 **Goal:** Legal weight distribution. Hardest solver piece.
 
-- Compute load on each axle from placement x-positions + weights (moment / lever-arm calc).
-- Enforce per-axle max load.
-- Bias heavy cases toward/over axle positions during packing.
-- Report axle loads in the overlay; flag overloaded axles.
+Load distribution model (`domain.ComputeAxleLoads`, reusable — also feeds M8 recompute):
 
-**Done when:** solver output keeps every axle within limit and reports the distribution.
+- Each placed case contributes a `PointLoad` = its weight acting at the centre of its footprint
+  along the truck length (`pos.x + size.x/2`).
+- Each point load is split between the two axles that bracket it, by the **lever rule** — the
+  closer axle takes the larger share (load at the midpoint splits 50/50; load directly over an
+  axle goes entirely to it).
+- A load ahead of the first axle or behind the last is assigned entirely to that nearest axle —
+  overhang is clamped, so no negative reactions.
+- Single axle carries everything; N axles supported (the bracketing pair is found from axles
+  sorted by position). This is a practical heuristic, not full statics (3+ axles are
+  statically indeterminate — not solved exactly).
+
+Solver (`packer.Stacker`):
+
+- **Enforcement:** a candidate placement is rejected if adding the case there would push any axle
+  over its `maxLoad` (`axleFeasible` recomputes the full distribution per candidate). A case that
+  cannot be placed anywhere without overloading an axle is left unplaced.
+- **Bias:** candidate positions are tie-broken by distance to the nearest axle (after the
+  lowest-z rule), so heavy cases — packed first — settle over the axles. No-op for trucks with no
+  axles.
+
+Reporting:
+
+- `LoadPlan.AxleLoads` — one `AxleLoad{position, load, maxLoad, over}` per axle.
+- Plan panel lists per-axle `load / maxLoad`; overloaded axles flagged red with a warning.
+- 3D view marks each axle with an orange hoop across the truck cross-section (plus a floor line)
+  at its position, so axle locations are visible.
+
+**Done when:** solver output keeps every axle within limit and reports the distribution. ✅
+
+**Refinement (not yet modelled):** the axle bias should key off an **absolute weight threshold**,
+not relative heaviness. Only cases above a set weight (e.g. a `heavyThreshold` kg, per truck or
+global config) need to sit over the axles — we do *not* need to force the heaviest cases in a
+given load over the axles when the whole load is light. Below the threshold, ignore the axle bias
+and pack for density. Current behaviour biases by relative order (heaviest-first + nearest-axle
+tie-break), which over-constrains light loads.
 
 ### M7 — Unload order
 **Goal:** Multi-site loading order.

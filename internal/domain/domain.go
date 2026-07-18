@@ -90,6 +90,17 @@ type LoadPlan struct {
 	// Unplaced lists case IDs that did not fit.
 	Unplaced []string `json:"unplaced"`
 	Summary  Summary  `json:"summary"`
+	// AxleLoads reports the computed load on each truck axle, one per Truck.Axles
+	// entry in the same order.
+	AxleLoads []AxleLoad `json:"axleLoads"`
+}
+
+// AxleLoad is the computed load carried by one axle.
+type AxleLoad struct {
+	Position int  `json:"position"` // mm from front, mirrors Axle.Position
+	Load     int  `json:"load"`     // kg carried by this axle
+	MaxLoad  int  `json:"maxLoad"`  // kg limit, mirrors Axle.MaxLoad
+	Over     bool `json:"over"`     // true when Load exceeds MaxLoad
 }
 
 // Summary holds headline stats for a LoadPlan.

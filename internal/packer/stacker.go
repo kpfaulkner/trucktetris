@@ -51,6 +51,7 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 	total := 0
 
 	points := []point{{0, 0, 0}}
+	var loads []domain.PointLoad // point loads of placed cases, for axle checks
 
 	for _, c := range cases {
 		if total+c.Weight > t.GrossMax {
@@ -58,7 +59,7 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 			continue
 		}
 
-		pos, o, parent, ok := findSpot(c, t, boxes, borne, points)
+		pos, o, parent, ok := findSpot(c, t, boxes, borne, points, loads)
 		if !ok {
 			plan.Unplaced = append(plan.Unplaced, c.ID)
 			continue
@@ -78,6 +79,7 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 			borne[a] += c.Weight
 		}
 		total += c.Weight
+		loads = append(loads, caseLoad(p.min[0], o.dx, c.Weight))
 
 		plan.Placements = append(plan.Placements, domain.Placement{
 			CaseID: c.ID,
@@ -97,17 +99,30 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 
 	plan.Summary.PlacedCount = len(plan.Placements)
 	plan.Summary.UnplacedCount = len(plan.Unplaced)
+	plan.AxleLoads = domain.ComputeAxleLoads(t, loads)
 	return plan
 }
 
+// caseLoad builds the point load for a placed case: its weight acting at the
+// centre of its footprint along the truck length.
+func caseLoad(minX, dx, weight int) domain.PointLoad {
+	return domain.PointLoad{X: minX + dx/2, Weight: weight}
+}
+
 // findSpot searches candidate points and orientations for a legal placement of
-// c. Points are tried lowest-first so cases settle down rather than float high.
-func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, points []point) (point, orientation, int, bool) {
+// c. Points are tried lowest-first so cases settle down rather than float high;
+// as a tie-break they are biased toward the nearest axle so heavy cases sit
+// over the axles. A candidate is rejected if adding c there would overload any
+// axle.
+func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, points []point, loads []domain.PointLoad) (point, orientation, int, bool) {
 	cand := make([]point, len(points))
 	copy(cand, points)
 	sort.SliceStable(cand, func(i, j int) bool {
 		if cand[i].z != cand[j].z {
 			return cand[i].z < cand[j].z
+		}
+		if di, dj := axleDist(t, cand[i].x), axleDist(t, cand[j].x); di != dj {
+			return di < dj
 		}
 		if cand[i].x != cand[j].x {
 			return cand[i].x < cand[j].x
@@ -130,10 +145,49 @@ func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, 
 			if !ok {
 				continue
 			}
+			if !axleFeasible(t, loads, caseLoad(pt.x, o.dx, c.Weight)) {
+				continue
+			}
 			return pt, o, parent, true
 		}
 	}
 	return point{}, orientation{}, -1, false
+}
+
+// axleDist returns the distance from x to the nearest axle, or 0 when the truck
+// has no axles (so the bias becomes a no-op).
+func axleDist(t domain.Truck, x int) int {
+	if len(t.Axles) == 0 {
+		return 0
+	}
+	best := -1
+	for _, a := range t.Axles {
+		d := x - a.Position
+		if d < 0 {
+			d = -d
+		}
+		if best == -1 || d < best {
+			best = d
+		}
+	}
+	return best
+}
+
+// axleFeasible reports whether adding one more point load keeps every axle
+// within its limit. Trucks with no axles are always feasible.
+func axleFeasible(t domain.Truck, loads []domain.PointLoad, add domain.PointLoad) bool {
+	if len(t.Axles) == 0 {
+		return true
+	}
+	trial := make([]domain.PointLoad, len(loads)+1)
+	copy(trial, loads)
+	trial[len(loads)] = add
+	for _, al := range domain.ComputeAxleLoads(t, trial) {
+		if al.Over {
+			return false
+		}
+	}
+	return true
 }
 
 // support checks that a box occupying [bmin,bmax] is properly supported and,

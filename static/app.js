@@ -187,6 +187,24 @@ function renderPlanStats(plan, caseById) {
   $('#stat-placed').textContent = plan.summary.placedCount;
   $('#stat-unplaced').textContent = plan.summary.unplacedCount;
   $('#stat-weight').textContent = `${plan.summary.totalWeight} kg`;
+
+  const axles = $('#stat-axles');
+  axles.replaceChildren();
+  if ((plan.axleLoads || []).length) {
+    axles.append(el('b', { textContent: 'Axle loads' }));
+    axles.append(el('div', {
+      textContent: 'Orange hoops in the view mark axle positions.',
+      style: 'font-size:0.75rem;color:#c60;padding:0.1rem 0 0.2rem;',
+    }));
+    plan.axleLoads.forEach((a, i) => {
+      const row = el('div', { className: `axle${a.over ? ' over' : ''}` }, [
+        el('span', { textContent: `Axle ${i + 1} @ ${a.position}mm` }),
+        el('b', { textContent: `${a.load} / ${a.maxLoad} kg${a.over ? ' ⚠' : ''}` }),
+      ]);
+      axles.append(row);
+    });
+  }
+
   $('#stat-unfit').textContent = plan.unplaced.length
     ? `Did not fit: ${plan.unplaced.map((id) => caseById.get(id)?.name || id).join(', ')}`
     : '';

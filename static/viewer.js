@@ -73,7 +73,38 @@ export function createViewer(container) {
     grid.position.set(l / 2, 0, w / 2);
     contentGroup.add(grid);
 
+    addAxles(truck, w, h);
     return { l, w, h };
+  }
+
+  // Mark each axle as an orange hoop across the truck cross-section at its
+  // position along the length, so its location is visible in 3D.
+  function addAxles(truck, w, h) {
+    for (const a of truck.axles || []) {
+      const x = a.position * MM;
+      const pts = [
+        new THREE.Vector3(x, 0, 0),
+        new THREE.Vector3(x, h, 0),
+        new THREE.Vector3(x, h, w),
+        new THREE.Vector3(x, 0, w),
+        new THREE.Vector3(x, 0, 0),
+      ];
+      const hoop = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: 0xff8c00 }),
+      );
+      contentGroup.add(hoop);
+
+      // A marker running down the floor centre-line at the axle for emphasis.
+      const floor = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(x, 0.005, 0),
+          new THREE.Vector3(x, 0.005, w),
+        ]),
+        new THREE.LineBasicMaterial({ color: 0xff8c00 }),
+      );
+      contentGroup.add(floor);
+    }
   }
 
   function addCase(placement, type) {

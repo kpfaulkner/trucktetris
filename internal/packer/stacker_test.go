@@ -141,6 +141,48 @@ func TestStackerRejectsDisallowedStack(t *testing.T) {
 	}
 }
 
+func TestStackerReportsAxleLoads(t *testing.T) {
+	req := domain.SolveRequest{Truck: domain.SampleTruck(), Cases: domain.SampleCases()}
+	plan := Stacker{}.Pack(req)
+
+	if len(plan.AxleLoads) != len(req.Truck.Axles) {
+		t.Fatalf("axle loads = %d, want %d", len(plan.AxleLoads), len(req.Truck.Axles))
+	}
+	sum := 0
+	for _, a := range plan.AxleLoads {
+		sum += a.Load
+		if a.Over {
+			t.Errorf("sample should not overload axle @ %d (%d/%d)", a.Position, a.Load, a.MaxLoad)
+		}
+	}
+	if sum != plan.Summary.TotalWeight {
+		t.Fatalf("axle loads sum %d != total weight %d", sum, plan.Summary.TotalWeight)
+	}
+}
+
+func TestStackerRejectsAxleOverload(t *testing.T) {
+	// One axle with a tiny limit; a heavy case cannot be placed anywhere without
+	// overloading it, so it stays unplaced and no axle ends up over limit.
+	req := domain.SolveRequest{
+		Truck: domain.Truck{
+			ID: "t", Dim: domain.Dimensions{L: 4000, W: 2000, H: 2000}, GrossMax: 100000,
+			Axles: []domain.Axle{{Position: 1000, MaxLoad: 100}, {Position: 3000, MaxLoad: 100}},
+		},
+		Cases: []domain.Case{
+			{ID: "heavy", Type: "x", Dim: domain.Dimensions{L: 500, W: 500, H: 500}, Weight: 5000},
+		},
+	}
+	plan := Stacker{}.Pack(req)
+	if plan.Summary.PlacedCount != 0 {
+		t.Fatalf("heavy case should be rejected on axle overload, placed=%d", plan.Summary.PlacedCount)
+	}
+	for _, a := range plan.AxleLoads {
+		if a.Over {
+			t.Errorf("no axle should be over after rejection: @ %d %d/%d", a.Position, a.Load, a.MaxLoad)
+		}
+	}
+}
+
 func TestStackerRejectsWhenBottomNotStackable(t *testing.T) {
 	// Type + weight would allow it, but the bottom case is flagged not
 	// stackable, so nothing may rest on it.
