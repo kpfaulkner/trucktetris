@@ -342,10 +342,39 @@ export function createViewer(container) {
     }
   }
 
+  // dropZ returns how far the entry can fall: the highest top of a box below it
+  // that its footprint overlaps, or the floor (0).
+  function dropZ(entry) {
+    let z = 0;
+    for (const o of entries) {
+      if (o === entry) continue;
+      const top = o.pos[2] + o.size[2];
+      const overlapXY = entry.pos[0] < o.pos[0] + o.size[0] && o.pos[0] < entry.pos[0] + entry.size[0] &&
+        entry.pos[1] < o.pos[1] + o.size[1] && o.pos[1] < entry.pos[1] + entry.size[1];
+      if (overlapXY && top <= entry.pos[2]) z = Math.max(z, top);
+    }
+    return z;
+  }
+
+  // settleAll applies gravity: every box falls until it rests on the floor or a
+  // box beneath it, so moving a support never leaves another box floating.
+  function settleAll() {
+    for (let guard = 0; guard <= entries.length + 1; guard++) {
+      let moved = false;
+      for (const e of [...entries].sort((a, b) => a.pos[2] - b.pos[2])) {
+        const z = dropZ(e);
+        if (z < e.pos[2]) { e.pos[2] = z; moved = true; }
+      }
+      if (!moved) break;
+    }
+    for (const e of entries) e.group.position.copy(centreOf(e.pos, e.size));
+  }
+
   function endDrag() {
     if (!drag) return;
     drag = null;
     controls.enabled = true;
+    settleAll(); // no floating boxes: drop anything that lost its support
     if (onChange) onChange(placements());
   }
   renderer.domElement.addEventListener('pointerup', endDrag);

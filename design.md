@@ -229,6 +229,13 @@ lifts it on top; dragging it back to clear floor drops it down. No separate vert
 needed. (A drag that leaves a box overhanging or interpenetrating is flagged red by the
 evaluation, same as any other violation.)
 
+No floating boxes: on drop, a **gravity settle** (`settleAll`) runs over every box — each falls
+until it rests on the floor or a box beneath it (`dropZ` = highest overlapping box-top below it,
+iterated until stable). So moving a *supporting* box out never leaves the box that was on top
+hanging in mid-air; it drops. This eliminates the "unsupported" violation from manual editing.
+(Currently applied on drag drop; a rotation that shrinks a support under another box is a rarer
+case not yet re-settled.)
+
 Quantity + placement identity:
 
 - The "build a load" selection takes a **quantity** per case (0 = skip), so the same case can be
