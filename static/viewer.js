@@ -49,6 +49,8 @@ export function createViewer(container) {
   let truckDim = null;     // { l, w, h } in mm
   let onChange = null;     // callback(placements) during/after a drag
   let onDragStart = null;  // callback() at the start of a drag (for undo)
+  let onSelect = null;     // callback(instanceId) when a box is picked
+  let caseIndex = null;    // Map caseId -> Case, for the rotated-from-natural check
 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
@@ -144,9 +146,13 @@ export function createViewer(container) {
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
       color: colourFor(placement.caseId), transparent: true, opacity: 0.9,
     }));
+    // Blue edges mark a rotated box (off its natural upright L×W pose).
+    const c = caseIndex && caseIndex.get(placement.caseId);
+    const rotated = c && (placement.up !== 'H' ||
+      placement.size[0] !== c.dim.l || placement.size[1] !== c.dim.w);
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(geo),
-      new THREE.LineBasicMaterial({ color: 0x000000 }),
+      new THREE.LineBasicMaterial({ color: rotated ? 0x1560ff : 0x000000 }),
     );
     // Red corner dots, hidden unless the box is in a bad spot. Keeps the case's
     // own colour visible while still flagging a violation.
@@ -217,6 +223,8 @@ export function createViewer(container) {
     truckDim = plan.truck.dim;
     onChange = opts.onChange || null;
     onDragStart = opts.onDragStart || null;
+    onSelect = opts.onSelect || null;
+    caseIndex = caseById;
     addTruck(plan.truck);
     for (const p of plan.placements) {
       addCase(p);
@@ -247,6 +255,7 @@ export function createViewer(container) {
     if (!hits.length) return;
 
     const entry = hits[0].object.userData.entry;
+    if (onSelect) onSelect(entry.instanceId); // select for rotate etc.
     if (onDragStart) onDragStart(); // snapshot for undo before the move
     // Horizontal plane at the box base height; drag slides it at its level.
     const baseY = entry.pos[2] * MM;
@@ -275,6 +284,8 @@ export function createViewer(container) {
     // Only the origin plane is a floor (no negative coordinates).
     entry.pos[0] = Math.max(0, snap(Math.round(cx / MM - entry.size[0] / 2)));
     entry.pos[1] = Math.max(0, snap(Math.round(cz / MM - entry.size[1] / 2)));
+    // Snap flush to nearby box faces / truck walls to close gaps (M13).
+    snapToNeighbours(entry);
     // Rest on whatever is under this footprint: the highest overlapping box
     // top, or the floor. Dragging a box over another lifts it on top.
     entry.pos[2] = restingZ(entry);
@@ -297,6 +308,38 @@ export function createViewer(container) {
       if (overlapXY) z = Math.max(z, o.pos[2] + o.size[2]);
     }
     return z;
+  }
+
+  // snapToNeighbours nudges the entry's x and y so a face lands flush against a
+  // nearby box face or a truck wall (within SNAP_EDGE mm), reducing gaps. Only
+  // boxes overlapping in the other horizontal axis and in height are considered,
+  // so it snaps to things it would actually abut. The smallest nudge wins.
+  function snapToNeighbours(entry) {
+    const SNAP_EDGE = 150; // mm
+    const wall = [truckDim.l, truckDim.w];
+    for (const axis of [0, 1]) {
+      const otherH = axis === 0 ? 1 : 0;
+      const near = entry.pos[axis];
+      const far = entry.pos[axis] + entry.size[axis];
+      let best = null; // signed delta to add to pos[axis]
+      const consider = (line) => {
+        for (const face of [near, far]) {
+          const d = line - face;
+          if (Math.abs(d) <= SNAP_EDGE && (best === null || Math.abs(d) < Math.abs(best))) best = d;
+        }
+      };
+      consider(0);
+      consider(wall[axis]);
+      for (const o of entries) {
+        if (o === entry) continue;
+        const overlaps = (a) =>
+          entry.pos[a] < o.pos[a] + o.size[a] && o.pos[a] < entry.pos[a] + entry.size[a];
+        if (!overlaps(otherH) || !overlaps(2)) continue;
+        consider(o.pos[axis]);
+        consider(o.pos[axis] + o.size[axis]);
+      }
+      if (best !== null) entry.pos[axis] = Math.max(0, entry.pos[axis] + best);
+    }
   }
 
   function endDrag() {

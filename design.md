@@ -255,6 +255,11 @@ Live staging (hand-loading workflow):
   render** repacks everything (clearing staging); **Load** restores a saved plan (all positioned).
 - Viewer support: a `keepCamera` option avoids resetting the camera on incremental staging, and
   the camera frames all content (truck + staging area), not just the truck.
+- **Solve keeps un-fitted cases visible.** After **Solve & render**, cases the solver could not
+  fit are not dropped from the view — each is added as a staged box beside the truck (flagged
+  with red dots as "not loaded"), so the user is reminded they still need handling and can drag
+  them in. The panel stats stay the solver's truck figures (a one-shot evaluate applies the
+  red-dot flagging without letting staged boxes inflate the truck weight/axle numbers).
 
 **Scope notes:**
 - Manual placements persist **in-session** (client state; survive tab switches, cleared on
@@ -279,6 +284,12 @@ Save / load named plans:
 - A save captures the **current** placements, including manual edits from M7. Loading fetches the
   plan + its truck, rebuilds the 3D view (editable), and re-derives live stats via
   `/api/evaluate`.
+- **Save derives "not loaded" from reality** (bug fix): the saved `unplaced` list is computed at
+  save time from the current placements — any box outside the truck bounds (`inTruck` check) —
+  not the stale solver `unplaced` from the last solve. Earlier this saved the old solver list, so
+  a hand-packed plan could under-report what was actually left out (and the loading sheet's "Did
+  not fit" line inherited the wrong count). Loading uses the same in-truck test, so panel, sheet,
+  and 3D view now agree.
 - Loading also **syncs the "build a load" controls** back to the saved plan: the truck dropdown is
   set to the plan's truck, and each case's quantity is set to its count in the plan (placed
   instances + unplaced entries; 0 for cases not in it). So the selection reflects what was loaded
@@ -309,9 +320,11 @@ first for the compliance figures). Delivered exactly as designed below: numbered
 the rear-door view, Tier + "rests on floor / on #N case", orientation words), duplicate ordinals
 "(2 of 3)", top-down and side-elevation SVG diagrams (step-numbered, FRONT/BACK marked, colours
 shared with the 3D viewer via `colourFor`), and the compliance summary (weight vs gross %,
-per-axle PASS/OVER, cases loaded, not-loaded list, rule violations). Only in-truck cases appear in
-the sequence and diagrams; anything outside the load space is listed as not loaded. The M10
-disclaimer sits at the foot, exported as a shared `DISCLAIMER` constant.
+per-axle PASS/OVER, cases loaded, a **"Did not fit"** line (solver-unplaced cases, collapsed to
+"Name x N"), and rule violations). Only in-truck cases appear in the sequence and diagrams. (An
+earlier version also printed a separate "Not loaded (outside truck)" line; it duplicated the
+"Did not fit" information and was removed.) The M10 disclaimer sits at the foot, exported as a
+shared `DISCLAIMER` constant.
 
 **Delivery:** a print-friendly **HTML "loading sheet"** (opens in the browser, Save-as-PDF /
 print). SVG diagrams print crisply and need no PDF library — matches the existing stack. Can be
@@ -393,11 +406,103 @@ the in-app notice, so it stays consistent and is easy to update.
 **Done when:** the disclaimer appears on every exported/printed loading sheet and is visible in
 the app, sourced from a single shared string.
 
+### M11 — Rotate cases in the UI  ✅ implemented
+**Goal:** Let the user rotate a case during manual editing (through the orientations that case
+allows), with a clear visual indication that a box is rotated from its natural upright pose.
+
+- **Selection:** clicking a box (pointerdown) selects it; the app tracks the selected
+  `instanceId` (viewer fires an `onSelect` callback).
+- **Rotate:** pressing **R** cycles the selected case through its allowed orientations, computed
+  client-side with the same rule as the solver's `orientations()`: yaw (footprint L/W swap) is
+  always available; side-up and end-up are added only when `canLieOnSide` is true. Each press
+  updates the placement's `size` + `up`, re-renders (camera kept), and re-evaluates (so a rotation
+  that now overhangs/overlaps flags via the red dots). A case with only one orientation (cube /
+  upright-only square footprint) does nothing.
+- **Visual indication:** a rotated box (up-axis ≠ H, or its footprint swapped from the case's
+  natural L×W) is drawn with **blue edges** instead of black. Fill colour and red bad-spot dots
+  are unaffected.
+- **Undo:** a rotation pushes an undo snapshot, so Ctrl/Cmd+Z reverts it like a move.
+
+**Done when:** the user selects a rotatable case, presses R to step through its orientations, and
+sees the box change shape with blue edges marking it as rotated.
+
+### M12 — Use rotation to fit more  ✅ implemented
+**Goal:** Fit more cases by considering rotation during Solve, so the solver stops reporting
+"won't fit" for cases that would fit if turned.
+
+**Finding:** the solver *already* tried every allowed orientation for each case (yaw always;
+side/end when `canLieOnSide`) — verified by tests (`TestRotatesYawToFit`,
+`TestLaysOnSideToFitOnlyWhenAllowed`). The real gap was **position coverage**, not rotation: the
+extreme-point candidate set is sparse, so a viable spot (often a rotated one) in a gap was never
+*tried*, and the case was dropped as unplaced.
+
+**Changes (two levers):**
+
+1. **Rich candidate positions.** Every placement searches the extreme points **plus**
+   `gridPositions` — candidate origins at the Cartesian product of "interesting" coordinates (0
+   plus each placed box's near/far face on each axis). These flush-abutting spots are where tight
+   fits actually occur: precise (no coarse rounding), far smaller than a uniform sweep, capped for
+   huge loads. Every orientation is tried at every position, so rotation is fully exploited to slot
+   cases into gaps. (This started as a fallback only when the sparse extreme points failed;
+   promoting it to the primary set is what packed the load tight enough to fit everything.)
+2. **Multi-strategy ordering.** `Pack` runs the pack under several case orderings — heaviest,
+   largest-volume, tallest, largest-footprint — and keeps the best-filling result (`betterPlan`:
+   most placed, then most weight, then highest volume use). Instance IDs are assigned once up
+   front so identity is order-independent. Axle/bearing/gross limits are enforced in every pass,
+   so whichever ordering wins is still legal.
+
+**Result on the real overflow case** (semi-trailer, 8 bertha + 5 amp + 10 speaker + 24 lighting +
+23 cable + 1 long, 71 cases): the old single-ordering solver fit **57**; a human hand-packing with
+rotation managed **63**; the current solver fits **all 71** (0 unplaced), ~420 ms for 4 orderings.
+Progression as the levers were added: 57 → 67 (multi-ordering, extreme-points primary) → 71
+(edge-abutting positions primary).
+
+**Done when:** cases that fit only when rotated/slotted into a gap are placed instead of being
+reported as not fitting, and the solver matches or beats careful manual packing on the reference
+load. ✅
+
+**Still heuristic:** does not re-orient *already-placed* cases to make room for a later one, and
+does not do full global optimisation; pathological loads can still leave fits on the table. Search
+cost grows with box count (positions ≈ faces³); the position set is capped as a backstop.
+
+### M13 — Edge-snap when dragging  ✅ implemented
+**Goal:** During manual drag, snap a box flush against nearby box faces / truck walls so
+hand-packing closes gaps instead of leaving grid-aligned slivers.
+
+- After the usual 50 mm grid snap, `snapToNeighbours` nudges the box on x and y: for each axis it
+  gathers candidate lines — the two truck walls (0 and length/width) and the near/far faces of
+  every other box — and if the box's own near or far face is within **150 mm** of a candidate, it
+  shifts flush. The **smallest** nudge wins, so it only snaps to the closest thing and otherwise
+  leaves free movement.
+- Only boxes that overlap the dragged box in the *other* horizontal axis **and** in height are
+  considered, so it snaps to things it would actually abut, not distant boxes on another shelf.
+- Runs before the `restingZ` recompute (which then settles the box on whatever its snapped
+  footprint sits on) and before the live evaluation, so a flush placement is reflected
+  immediately. Never produces negative coordinates.
+
+**Done when:** dragging a box near another box or a wall pulls it flush, eliminating small gaps,
+without fighting the user when they want free placement. ✅
+
 ### Notes
 - M1–M3 = walking skeleton on hardcoded data; value early, proves the full stack.
 - Keep the solver behind the `Packer` interface — every solver milestone (M2, M5, M6) is a
   swap or extension, not a rewrite.
 - M7 depends on the M5/M6 recompute logic already existing.
+- M8 (save/load) depends on M7 — a saved plan captures the current placements including manual
+  edits; metrics reuse the M5/M6 solver + axle model.
+- M9 (loading sheet) depends on M6 (axle loads for the compliance box), M7 (`instanceId` +
+  placements it renders/sequences), and M8's `/api/evaluate` for the live compliance figures.
+- M10 (disclaimer) depends on M9 — the shared `DISCLAIMER` constant lives in the sheet module and
+  is reused by the in-app notice.
+- M11 (rotate) depends on M7 — it reuses the manual-edit selection, render, undo, and evaluate
+  path, and the client orientation logic mirrors the M5 `orientations()` rule.
+- M12 (rotation fit) extends the M2 `Packer`/M5 `Stacker` search — same M5 orientation set, plus
+  more candidate positions (edge-abutting fallback) and multi-ordering with best-of selection.
+  Every ordering still enforces the M5 stacking/bearing and M6 axle/gross limits, so any winning
+  plan is legal. No `Packer` interface or data-model change — swap-in behind the existing
+  interface (see the interface note above).
+- M13 (edge-snap) depends on M7 — a client-only drag refinement in the viewer, layered on the
+  existing grid-snap + `restingZ` + evaluate path; no server or data change.
 - Weight/axle info is UI overlay + solver logic, not extra 3D geometry — keep the 3D to
   plain boxes.
 - Single unload site only — unload order / multi-drop sequencing is out of scope by design.

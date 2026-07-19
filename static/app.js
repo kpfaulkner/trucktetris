@@ -74,9 +74,53 @@ function undo() {
   onPlacementsChanged(clonePlacements());
 }
 
+// Instance ID of the currently selected box (for rotate).
+let selectedInstanceId = null;
+
 // Options shared by every editable render, so drags snapshot for undo.
 function editorOpts(keepCamera) {
-  return { onChange: onPlacementsChanged, onDragStart: pushUndo, keepCamera };
+  return {
+    onChange: onPlacementsChanged,
+    onDragStart: pushUndo,
+    onSelect: (id) => { selectedInstanceId = id; },
+    keepCamera,
+  };
+}
+
+// orientationsFor mirrors the solver's orientations(): yaw always; side/end
+// only when the case may lie on its side. Returns [{size:[dx,dy,dz], up}].
+function orientationsFor(c) {
+  const { l, w, h } = c.dim;
+  const out = [];
+  const seen = new Set();
+  const add = (dx, dy, dz, up) => {
+    for (const [a, b] of [[dx, dy], [dy, dx]]) {
+      const k = `${a},${b},${dz},${up}`;
+      if (!seen.has(k)) { seen.add(k); out.push({ size: [a, b, dz], up }); }
+    }
+  };
+  add(l, w, h, 'H');
+  if (c.canLieOnSide) { add(l, h, w, 'W'); add(w, h, l, 'L'); }
+  return out;
+}
+
+// rotateSelected cycles the selected case to its next allowed orientation.
+function rotateSelected() {
+  if (!selectedInstanceId) return;
+  const p = manualPlacements.find((mp) => mp.instanceId === selectedInstanceId);
+  if (!p) return;
+  const c = planCaseById.get(p.caseId);
+  if (!c) return;
+  const opts = orientationsFor(c);
+  if (opts.length < 2) return; // nothing to rotate to
+  const cur = opts.findIndex((o) =>
+    o.up === p.up && o.size[0] === p.size[0] && o.size[1] === p.size[1] && o.size[2] === p.size[2]);
+  const next = opts[(cur + 1 + opts.length) % opts.length];
+  pushUndo();
+  p.size = [...next.size];
+  p.up = next.up;
+  renderManual({ keepCamera: true });
+  onPlacementsChanged(clonePlacements());
 }
 
 async function refreshData() {
@@ -403,10 +447,31 @@ async function solve() {
       instanceId: p.instanceId, caseId: p.caseId, pos: [...p.pos], size: [...p.size], up: p.up,
     }));
     stagedSet = new Set();
+    // Keep any cases that did not fit visible: stage them beside the truck so
+    // the user is reminded they are not loaded (and can drag them in).
+    const used = new Set(manualPlacements.map((p) => p.instanceId));
+    for (const id of planUnplaced) {
+      const c = planCaseById.get(id);
+      if (!c) continue;
+      let n = 0;
+      while (used.has(`${id}#${n}`)) n++;
+      const iid = `${id}#${n}`;
+      used.add(iid);
+      stagedSet.add(iid);
+      manualPlacements.push({ instanceId: iid, caseId: id, pos: [0, 0, 0], size: [c.dim.l, c.dim.w, c.dim.h], up: 'H' });
+    }
+    layoutStaging(planTruck);
     undoStack.length = 0; // fresh plan, clear history
+
     // Re-solving discards any manual edits and overrides with the solver result.
-    viewer.render(plan, planCaseById, editorOpts(false));
-    renderPlanStats(plan, planCaseById);
+    const viewPlan = { truck: planTruck, placements: clonePlacements(), unplaced: planUnplaced };
+    viewer.render(viewPlan, planCaseById, editorOpts(false));
+    renderPlanStats(plan, planCaseById); // panel shows the solver's truck figures
+    // Flag the staged (not-loaded) boxes with red dots, without letting them
+    // pollute the truck stats.
+    api('POST', '/api/evaluate', { truckId: planTruckId, placements: clonePlacements() })
+      .then((ev) => viewer.applyEvaluation(ev))
+      .catch(() => {});
   } catch (err) { setError(err.message); }
 }
 
@@ -450,7 +515,7 @@ function axleRows(axleLoads) {
   if (!(axleLoads || []).length) return;
   axles.append(el('b', { textContent: 'Axle loads' }));
   axles.append(el('div', {
-    textContent: 'Orange hoops mark axles. Drag a box to reposition; drag it over another box to stack on top.',
+    textContent: 'Orange hoops mark axles. Drag a box to reposition (over another to stack). Click a box then press R to rotate it; Ctrl+Z undoes.',
     style: 'font-size:0.75rem;color:#c60;padding:0.1rem 0 0.2rem;',
   }));
   axleLoads.forEach((a, i) => {
@@ -459,6 +524,21 @@ function axleRows(axleLoads) {
       el('b', { textContent: `${a.load} / ${a.maxLoad} kg${a.over ? ' ⚠' : ''}` }),
     ]));
   });
+}
+
+// summariseCounts turns a list of case IDs into "Name x N, Other" — collapsing
+// repeats into a count, keeping first-seen order.
+function summariseCounts(ids, caseById) {
+  const order = [];
+  const counts = {};
+  for (const id of ids) {
+    if (!(id in counts)) order.push(id);
+    counts[id] = (counts[id] || 0) + 1;
+  }
+  return order.map((id) => {
+    const name = caseById.get(id)?.name || id;
+    return counts[id] > 1 ? `${name} x ${counts[id]}` : name;
+  }).join(', ');
 }
 
 function renderPlanStats(plan, caseById) {
@@ -471,7 +551,7 @@ function renderPlanStats(plan, caseById) {
   axleRows(plan.axleLoads);
   $('#stat-violations').textContent = '';
   $('#stat-unfit').textContent = plan.unplaced.length
-    ? `Did not fit: ${plan.unplaced.map((id) => caseById.get(id)?.name || id).join(', ')}`
+    ? `Did not fit: ${summariseCounts(plan.unplaced, caseById)}`
     : '';
 }
 
@@ -504,16 +584,25 @@ function updateLiveStats(ev) {
 
 // --- save / load / export ----------------------------------------------------
 
+// inTruck reports whether a placement sits fully within the truck load space.
+function inTruck(p, truck) {
+  return p.pos[0] >= 0 && p.pos[1] >= 0 && p.pos[2] >= 0 &&
+    p.pos[0] + p.size[0] <= truck.dim.l &&
+    p.pos[1] + p.size[1] <= truck.dim.w &&
+    p.pos[2] + p.size[2] <= truck.dim.h;
+}
+
 async function savePlan() {
   setError('');
   const name = $('#plan-name').value.trim();
   if (!name) { setError('Enter a plan name'); return; }
-  if (!planTruckId) { setError('Solve a plan first'); return; }
+  if (!planTruck) { setError('Solve or build a plan first'); return; }
   try {
+    const placements = viewer.placements();
+    // Derive "not loaded" from reality at save time: any box outside the truck.
+    const unplaced = placements.filter((p) => !inTruck(p, planTruck)).map((p) => p.caseId);
     await api('POST', '/api/plans', {
-      name, truckId: planTruckId,
-      placements: viewer.placements(),
-      unplaced: planUnplaced,
+      name, truckId: planTruckId, placements, unplaced,
     });
     $('#plan-name').value = '';
     await renderPlanList();
@@ -620,7 +709,9 @@ async function printLoadingSheet() {
   if (!placements.length) { setError('Nothing to print'); return; }
   try {
     const evaluation = await api('POST', '/api/evaluate', { truckId: planTruckId, placements });
-    const html = buildLoadingSheet({ truck: planTruck, placements, caseById: planCaseById, evaluation });
+    const html = buildLoadingSheet({
+      truck: planTruck, placements, caseById: planCaseById, evaluation, unplaced: planUnplaced,
+    });
     const win = window.open('', '_blank');
     if (!win) { setError('Pop-up blocked — allow pop-ups to open the loading sheet'); return; }
     win.document.write(html);
@@ -647,9 +738,13 @@ async function boot() {
   // Ctrl/Cmd+Z undoes the last manual move (ignored while typing in a field).
   window.addEventListener('keydown', (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing) {
+    if (typing) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
       undo();
+    } else if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      rotateSelected();
     }
   });
   try {

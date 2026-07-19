@@ -57,12 +57,11 @@ function tierOf(p, placements, memo) {
 
 // buildLoadingSheet returns a complete HTML document string.
 // data = { truck, placements, caseById (Map), evaluation }
-export function buildLoadingSheet({ truck, placements, caseById, evaluation }) {
+export function buildLoadingSheet({ truck, placements, caseById, evaluation, unplaced = [] }) {
   // Only cases actually inside the load space are "loaded"; anything flagged
-  // out of bounds is listed separately as not loaded.
+  // out of bounds does not appear in the loading sequence/diagrams.
   const oob = new Set(evaluation.outOfBounds || []);
   const loaded = placements.filter((p) => !oob.has(p.instanceId));
-  const notLoaded = placements.filter((p) => oob.has(p.instanceId));
 
   // Loading order: floor tier first, then front -> back, then across.
   const order = [...loaded].sort((a, b) =>
@@ -133,7 +132,7 @@ export function buildLoadingSheet({ truck, placements, caseById, evaluation }) {
 <p class="sub">Load space ${truck.dim.l}×${truck.dim.w}×${truck.dim.h} mm.
   Sides are described looking from the rear doors toward the cab.</p>
 
-${complianceBox(truck, evaluation, loaded.length, notLoaded, nameOf)}
+${complianceBox(truck, evaluation, loaded.length, unplaced, caseById)}
 
 <h2>Loading sequence</h2>
 <p class="sub">Load in this order: floor first, front to back, then upward.</p>
@@ -155,7 +154,21 @@ ${complianceBox(truck, evaluation, loaded.length, notLoaded, nameOf)}
 </body></html>`;
 }
 
-function complianceBox(truck, ev, loadedCount, notLoaded, nameOf) {
+// summariseIds collapses repeated case IDs into "Name x N" via caseById.
+function summariseIds(ids, caseById) {
+  const order = [];
+  const counts = {};
+  for (const id of ids) {
+    if (!(id in counts)) order.push(id);
+    counts[id] = (counts[id] || 0) + 1;
+  }
+  return order.map((id) => {
+    const n = esc(caseById.get(id)?.name || id);
+    return counts[id] > 1 ? `${n} x ${counts[id]}` : n;
+  }).join(', ');
+}
+
+function complianceBox(truck, ev, loadedCount, unplaced, caseById) {
   const wPct = truck.grossMax > 0 ? Math.round((ev.totalWeight / truck.grossMax) * 100) : 0;
   const axles = (ev.axleLoads || []).map((a, i) =>
     `<div>Axle ${i + 1} @ ${a.position}mm: ${a.load} / ${a.maxLoad} kg
@@ -167,8 +180,8 @@ function complianceBox(truck, ev, loadedCount, notLoaded, nameOf) {
   if ((ev.unsupported || []).length) problems.push(`${ev.unsupported.length} unsupported`);
   if ((ev.collisions || []).length) problems.push(`${ev.collisions.length} overlapping`);
 
-  const notLoadedLine = notLoaded.length
-    ? `<div class="warn">Not loaded (outside truck): ${notLoaded.map((p) => esc(nameOf(p))).join(', ')}</div>`
+  const didNotFitLine = (unplaced || []).length
+    ? `<div class="warn">Did not fit: ${summariseIds(unplaced, caseById)}</div>`
     : '';
   const problemLine = problems.length
     ? `<div class="warn">Issues: ${problems.join(', ')}</div>`
@@ -182,7 +195,7 @@ function complianceBox(truck, ev, loadedCount, notLoaded, nameOf) {
         <span class="${ev.overGross ? 'over' : 'pass'}">${ev.overGross ? 'OVER' : 'PASS'}</span></div>
     </div>
     <div class="grid" style="margin-top:6px">${axles}</div>
-    ${notLoadedLine}${problemLine}
+    ${didNotFitLine}${problemLine}
   </div>`;
 }
 

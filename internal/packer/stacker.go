@@ -37,7 +37,34 @@ type placed struct {
 
 type point struct{ x, y, z int }
 
-// Pack implements Packer.
+// orderings are the case sort strategies Pack tries; the best-filling result
+// wins. Real loads pack better under different orders (heaviest-low helps axle
+// legality; largest-first / tallest-first often fits more), so we run a few and
+// keep whichever placed the most.
+var orderings = []struct {
+	name string
+	less func(a, b domain.Case) bool
+}{
+	{"heaviest", func(a, b domain.Case) bool {
+		if a.Weight != b.Weight {
+			return a.Weight > b.Weight
+		}
+		return volume(a) > volume(b)
+	}},
+	{"largest-volume", func(a, b domain.Case) bool { return volume(a) > volume(b) }},
+	{"tallest", func(a, b domain.Case) bool {
+		if a.Dim.H != b.Dim.H {
+			return a.Dim.H > b.Dim.H
+		}
+		return volume(a) > volume(b)
+	}},
+	{"largest-footprint", func(a, b domain.Case) bool {
+		return a.Dim.L*a.Dim.W > b.Dim.L*b.Dim.W
+	}},
+}
+
+// Pack implements Packer. It assigns stable instance IDs, then packs the cases
+// under several orderings and returns the best-filling plan.
 func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 	t := req.Truck
 
@@ -45,21 +72,40 @@ func (Stacker) Pack(req domain.SolveRequest) domain.LoadPlan {
 	// loaded multiple times has distinct placements. Assigned before sorting so
 	// identity does not depend on pack order.
 	perCase := map[string]int{}
-	items := make([]item, len(req.Cases))
+	base := make([]item, len(req.Cases))
 	for i, c := range req.Cases {
-		items[i] = item{c: c, instID: fmt.Sprintf("%s#%d", c.ID, perCase[c.ID])}
+		base[i] = item{c: c, instID: fmt.Sprintf("%s#%d", c.ID, perCase[c.ID])}
 		perCase[c.ID]++
 	}
 
-	// Heaviest first: keeps heavy cases low, helps the axle work in M6, and
-	// gives light cases something solid to sit on.
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].c.Weight != items[j].c.Weight {
-			return items[i].c.Weight > items[j].c.Weight
+	var best domain.LoadPlan
+	haveBest := false
+	for _, ord := range orderings {
+		items := make([]item, len(base))
+		copy(items, base)
+		sort.SliceStable(items, func(i, j int) bool { return ord.less(items[i].c, items[j].c) })
+		p := packOrdered(t, items)
+		if !haveBest || betterPlan(p, best) {
+			best, haveBest = p, true
 		}
-		return volume(items[i].c) > volume(items[j].c)
-	})
+	}
+	return best
+}
 
+// betterPlan reports whether a fills better than b: more cases placed, then
+// more weight loaded, then higher volume utilisation.
+func betterPlan(a, b domain.LoadPlan) bool {
+	if a.Summary.PlacedCount != b.Summary.PlacedCount {
+		return a.Summary.PlacedCount > b.Summary.PlacedCount
+	}
+	if a.Summary.TotalWeight != b.Summary.TotalWeight {
+		return a.Summary.TotalWeight > b.Summary.TotalWeight
+	}
+	return a.Summary.VolumeUtilPct > b.Summary.VolumeUtilPct
+}
+
+// packOrdered runs one packing pass over the given, already-ordered items.
+func packOrdered(t domain.Truck, items []item) domain.LoadPlan {
 	plan := domain.LoadPlan{Truck: t, Placements: []domain.Placement{}, Unplaced: []string{}}
 	var boxes []placed
 	borne := map[int]int{} // placement index -> weight currently resting above it
@@ -180,6 +226,17 @@ func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, 
 	// Only heavy cases are biased over the axles; lighter cases pack for density.
 	biasToAxle := t.IsHeavy(c.Weight)
 
+	// Search the extreme points plus the edge-abutting candidate set together, so
+	// every case gets precise flush-fit spots (not just the sparse extreme
+	// points) on every placement. All orientations are tried at every position,
+	// so rotation is fully considered.
+	positions := append(points[:len(points):len(points)], gridPositions(t, boxes)...)
+	return bestAmong(c, t, boxes, borne, positions, loads, biasToAxle)
+}
+
+// bestAmong scores every (position, orientation) pair and returns the best legal
+// placement, or ok=false if none fit.
+func bestAmong(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, positions []point, loads []domain.PointLoad, biasToAxle bool) (point, orientation, int, bool) {
 	var (
 		best       score
 		bestPoint  point
@@ -187,8 +244,7 @@ func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, 
 		bestParent int
 		found      bool
 	)
-
-	for _, pt := range points {
+	for _, pt := range positions {
 		for _, o := range orientations(c) {
 			bmin := [3]int{pt.x, pt.y, pt.z}
 			bmax := [3]int{pt.x + o.dx, pt.y + o.dy, pt.z + o.dz}
@@ -220,6 +276,52 @@ func findSpot(c domain.Case, t domain.Truck, boxes []placed, borne map[int]int, 
 		}
 	}
 	return bestPoint, bestOrient, bestParent, found
+}
+
+// gridPositions returns candidate origins for the fallback search: the Cartesian
+// product of "interesting" coordinates on each axis — 0 plus the near and far
+// faces of every placed box. Placing a new box flush against an existing box's
+// face is where tight fits actually occur, so this covers gaps the sparse
+// extreme points miss, precisely (no coarse grid rounding), while staying far
+// smaller than a uniform sweep. Capped as a safety net for huge loads.
+func gridPositions(t domain.Truck, boxes []placed) []point {
+	xs := axisCoords(boxes, 0, t.Dim.L)
+	ys := axisCoords(boxes, 1, t.Dim.W)
+	zs := axisCoords(boxes, 2, t.Dim.H)
+
+	const cap = 200000
+	out := make([]point, 0, len(xs)*len(ys)*len(zs))
+	for _, z := range zs {
+		for _, x := range xs {
+			for _, y := range ys {
+				out = append(out, point{x, y, z})
+				if len(out) >= cap {
+					return out
+				}
+			}
+		}
+	}
+	return out
+}
+
+// axisCoords collects the distinct candidate coordinates on one axis: 0, and
+// each placed box's near (min) and far (max) face, dropping anything at or past
+// the truck's limit on that axis. Sorted ascending.
+func axisCoords(boxes []placed, axis, limit int) []int {
+	seen := map[int]bool{0: true}
+	for _, b := range boxes {
+		for _, v := range []int{b.min[axis], b.max[axis]} {
+			if v > 0 && v < limit {
+				seen[v] = true
+			}
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for v := range seen {
+		out = append(out, v)
+	}
+	sort.Ints(out)
+	return out
 }
 
 // axleDist returns the distance from x to the nearest axle, or 0 when the truck
