@@ -27,7 +27,7 @@ feeds the solver and 3D view.
 
 ## Milestones
 
-### M1 — Domain model + Go skeleton
+M1 — Domain model + Go skeleton
 **Goal:** Foundations. Types + running server, no logic yet.
 
 - Core types:
@@ -46,7 +46,7 @@ feeds the solver and 3D view.
 
 **Done when:** `go run` serves a page, `/api/solve` round-trips JSON.
 
-### M2 — Basic packer (volume only)
+M2 — Basic packer (volume only)
 **Goal:** First real solver. Geometry only, ignore weight/axles/stacking/unload.
 
 - Solver behind an interface (`Packer`) so later versions swap in.
@@ -59,7 +59,7 @@ feeds the solver and 3D view.
 **Done when:** given sample data, returns non-overlapping placements inside the truck and reports
 any cases that did not fit.
 
-### M3 — Static 3D viewer
+M3 — Static 3D viewer
 **Goal:** See the plan. Read-only render.
 
 - Three.js. `BoxGeometry` per placed case, `EdgesGeometry` outline for readability.
@@ -78,7 +78,7 @@ any cases that did not fit.
 **Done when:** browser shows the packed truck in 3D matching solver output; pipeline
 Go → JSON → render proven.
 
-### M4 — Data-entry page
+M4 — Data-entry page
 **Goal:** Real user data replaces hardcoded samples.
 
 - Forms to add/edit/delete road cases (all `Case` fields incl. stacking rules).
@@ -106,7 +106,7 @@ see the case-data-authority note):
 **Done when:** user creates cases + a truck in the UI, selects them, and M2 solver runs on that
 data with no code edits.
 
-### M5 — Stacking rules + weight  ✅ implemented
+M5 — Stacking rules + weight  ✅ implemented
 **Goal:** Solver respects stack compatibility and weight.
 
 Stacking is **not** weight-only. Each `Case` carries explicit flags, and a case may be placed on
@@ -143,7 +143,7 @@ shows valid stacks. ✅
 **Not yet modelled:** max stack *height* as a separate per-case limit — currently bounded only by
 the truck's internal height. Revisit if real cases need a tighter cap.
 
-### M6 — Axle constraints  ✅ implemented
+M6 — Axle constraints  ✅ implemented
 **Goal:** Legal weight distribution. Hardest solver piece.
 
 Load distribution model (`domain.ComputeAxleLoads`, reusable — also feeds M8 recompute):
@@ -182,7 +182,7 @@ weight, not relative heaviness. `Truck.HeavyThreshold` (kg); a case is biased ov
 when its weight ≥ the threshold (and the threshold > 0). Lighter cases ignore the bias and pack
 for density. Per-axle max load is still enforced for every case. Threshold 0 disables the bias.
 
-### M7 — Manual repositioning  ✅ implemented
+M7 — Manual repositioning  ✅ implemented
 **Goal:** Human override in 3D.
 
 Evaluation stays in Go and is reused by the editor (`domain.EvaluatePlan`, `POST /api/evaluate`):
@@ -233,8 +233,8 @@ No floating boxes: on drop, a **gravity settle** (`settleAll`) runs over every b
 until it rests on the floor or a box beneath it (`dropZ` = highest overlapping box-top below it,
 iterated until stable). So moving a *supporting* box out never leaves the box that was on top
 hanging in mid-air; it drops. This eliminates the "unsupported" violation from manual editing.
-(Currently applied on drag drop; a rotation that shrinks a support under another box is a rarer
-case not yet re-settled.)
+Applied both on drag drop and after a rotate (`viewer.settle()` runs the same pass, since a
+rotation can change a box's height and leave the box above it floating).
 
 Quantity + placement identity:
 
@@ -272,7 +272,7 @@ Live staging (hand-loading workflow):
 - Manual placements persist **in-session** (client state; survive tab switches, cleared on
   re-solve). Saving an edited plan to the database is deferred to M8.
 
-### M8 — Polish  ✅ implemented
+M8 — Polish  ✅ implemented
 **Goal:** Usable product.
 
 Packing metrics (`domain.Summary`):
@@ -314,7 +314,7 @@ editing.
 
 **Done when:** a plan can be saved, reloaded, and exported for use by loaders. ✅
 
-### M9 — Loading paperwork  ✅ implemented
+M9 — Loading paperwork  ✅ implemented
 **Goal:** Turn a plan into paperwork a loader can follow at the truck, without reading raw
 coordinates. The plan already knows *where* everything goes; the sheet must explain *how to load
 it* in human terms.
@@ -375,7 +375,7 @@ live violations (overload, unsupported, illegal stack) surfaced prominently.
 **Done when:** from a solved or hand-edited plan, the user prints a sheet whose numbered sequence
 + diagrams let someone load the truck correctly without opening the app.
 
-### M10 — Disclaimer  ✅ implemented
+M10 — Disclaimer  ✅ implemented
 **Goal:** Make clear the tool gives a *suggestion*, not certified load advice — protects the
 user and sets honest expectations, since real loading involves restraint, load rating, road
 rules, and judgement the tool does not model.
@@ -413,7 +413,7 @@ the in-app notice, so it stays consistent and is easy to update.
 **Done when:** the disclaimer appears on every exported/printed loading sheet and is visible in
 the app, sourced from a single shared string.
 
-### M11 — Rotate cases in the UI  ✅ implemented
+M11 — Rotate cases in the UI  ✅ implemented
 **Goal:** Let the user rotate a case during manual editing (through the orientations that case
 allows), with a clear visual indication that a box is rotated from its natural upright pose.
 
@@ -433,7 +433,7 @@ allows), with a clear visual indication that a box is rotated from its natural u
 **Done when:** the user selects a rotatable case, presses R to step through its orientations, and
 sees the box change shape with blue edges marking it as rotated.
 
-### M12 — Use rotation to fit more  ✅ implemented
+M12 — Use rotation to fit more  ✅ implemented
 **Goal:** Fit more cases by considering rotation during Solve, so the solver stops reporting
 "won't fit" for cases that would fit if turned.
 
@@ -472,7 +472,7 @@ load. ✅
 does not do full global optimisation; pathological loads can still leave fits on the table. Search
 cost grows with box count (positions ≈ faces³); the position set is capped as a backstop.
 
-### M13 — Edge-snap when dragging  ✅ implemented
+M13 — Edge-snap when dragging  ✅ implemented
 **Goal:** During manual drag, snap a box flush against nearby box faces / truck walls so
 hand-packing closes gaps instead of leaving grid-aligned slivers.
 
@@ -489,6 +489,30 @@ hand-packing closes gaps instead of leaving grid-aligned slivers.
 
 **Done when:** dragging a box near another box or a wall pulls it flush, eliminating small gaps,
 without fighting the user when they want free placement. ✅
+
+M14
+- Turns out load bearing is NOT a thing. All cases can handle all loads... so remove that limitation and value against each case type
+
+M15
+- Similar to what we do in the lighting-paperwork project, we will have a number of clients.
+- There is a system admin that can create clients and the client-admins
+- The client admins can only see the contents of it's own client
+- The client admin can make other users for that client. Those users can only see details
+  for that client.
+
+M16
+- There is a page called "case library" which contains names, dimensions, weights of all the road cases
+- Only the system admin can create entries in the case library
+
+M17
+- Each client admin has access to a page called "client cases" where they can select from the case library
+  which cases they actually have access to. For example, system admin might say trucktetris has cases A,B,C,D
+  but client admin for client 123 might know they only have case A,B,C. So they'll select A,B,C
+
+M18
+- When a user is actually using trucktetris, on the Build-a-Load section, only the cases that the client admin
+  has selected, will actually be visible there.
+
 
 ### Notes
 - M1–M3 = walking skeleton on hardcoded data; value early, proves the full stack.

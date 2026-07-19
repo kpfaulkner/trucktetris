@@ -120,7 +120,9 @@ function rotateSelected() {
   p.size = [...next.size];
   p.up = next.up;
   renderManual({ keepCamera: true });
-  onPlacementsChanged(clonePlacements());
+  // A rotation can change height and leave a box above it floating; settle so
+  // nothing hangs, then sync + re-evaluate from the settled positions.
+  onPlacementsChanged(viewer.settle());
 }
 
 async function refreshData() {

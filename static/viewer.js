@@ -387,7 +387,7 @@ export function createViewer(container) {
     renderer.render(scene, camera);
   })();
 
-  return { render, resize, applyEvaluation, placements };
+  return { render, resize, applyEvaluation, placements, settle: () => { settleAll(); return placements(); } };
 }
 
 function snap(v) { return Math.round(v / SNAP) * SNAP; }
